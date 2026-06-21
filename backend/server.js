@@ -6,7 +6,6 @@ import { connect } from './db.js';
 import { ensureSeed } from './seed.js';
 import { authenticate, authorize } from './middleware/auth.js';
 import { scheduleAutoBackup, runBackup, listBackups, backupDir } from './backup.js';
-// Les imports mailer ont été totalement supprimés
 import { CONFIG } from './config.js';
 
 import authRoutes from './routes/auth.js';
@@ -21,6 +20,31 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
 const app = express();
+
+// CORS pour autoriser le site React Site-2
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ];
+
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

@@ -356,21 +356,20 @@ const Views = (() => {
   }
 
 
-  function renderDemTable(list) {
+function renderDemTable(list) {
     const t = $('#demTable');
     if (!list.length) { t.innerHTML = UI.emptyState('📨', 'Aucune demande.'); return; }
     t.innerHTML = `<div class="table-wrap"><table class="data">
       <thead><tr>
-        <th>Numéro</th><th>Nom</th><th>Prénom</th><th>Wilaya</th><th>Type de demande</th>
-        <th>Date de création</th><th>Statut</th><th></th>
+        <th>Numéro</th><th>Nom</th><th>Prénom</th><th>Wilaya</th>
+        <th>Date & Heure de création</th><th>Statut</th><th></th>
       </tr></thead><tbody>
       ${list.map((d) => `<tr>
         <td><span class="mono">${esc(d.numero)}</span></td>
         <td class="cell-strong">${esc(d.nom)}</td>
         <td>${esc(d.prenom)}</td>
         <td>${esc(d.wilaya_nom || d.wilaya_code || '—')}</td>
-        <td>${esc(d.type_demande || d.objet || '—')}</td>
-        <td class="muted">${esc((d.created_at || '').slice(0, 10))}</td>
+        <td class="muted">${esc((d.created_at || '').replace('T', ' ').slice(0, 16))}</td>
         <td>${UI.statutTag(d.statut)}</td>
         <td><div class="row-actions">
           <button class="btn btn-dark btn-sm" data-view="${d.id}">Traiter</button>
