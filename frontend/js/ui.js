@@ -50,8 +50,8 @@ const UI = (() => {
     return `<span class="tag ${map[p] || 'tag-normale'}">${esc(p)}</span>`;
   }
   function niveauTag(n) {
-    if (n === 'Adhérent Gold') return `<span class="tag tag-gold">★ Gold</span>`;
-    return `<span class="muted">${esc(n || '-')}</span>`;
+    if (!n || n === 'Adhérent Simple' || n === 'Adhérent simple') return `<span class="muted">Carte Simple</span>`;
+    return `<span class="tag tag-gold">★ Carte Gold</span>`;
   }
   function typeTag(libelle) { return `<span class="tag tag-type">${esc(libelle)}</span>`; }
 

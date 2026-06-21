@@ -76,9 +76,10 @@ export const WILAYAS = [
 
 // Types d'adhérents
 export const TYPES = [
-  { code: 'AD', libelle: 'Adhérent' },
-  { code: 'MA', libelle: 'Membre Actif' },
-  { code: 'CR', libelle: 'Conseiller' },
+  { code: 'AD_simple', realCode: 'AD', libelle: 'Adhérent simple', niveau: 'Adhérent Simple' },
+  { code: 'AD_gold', realCode: 'AD', libelle: 'Adhérent gold', niveau: 'Adhérent Gold' },
+  { code: 'MA', realCode: 'MA', libelle: 'Membre Actif', niveau: 'Membre Actif' },
+  { code: 'CR', realCode: 'CR', libelle: 'Conseiller', niveau: 'Conseiller' },
 ];
 
 // Niveaux d'adhésion
@@ -142,7 +143,7 @@ export function carteInfo(adherent) {
   } else if (niveau === 'Membre Actif' || type === 'MA') {
     modele = 'gold'; basAr = 'بطاقة عضو فعّال'; qualiteAr = 'عضو فعّال';
   } else if (niveau === 'Adhérent Gold') {
-    modele = 'gold'; basAr = 'بطاقة منخرط ذهبي'; qualiteAr = 'منخرط ذهبي';
+    modele = 'gold'; basAr = 'بطاقة منخرط '; qualiteAr = 'منخرط ';
   } else {
     modele = 'simple'; basAr = 'بطاقة منخرط'; qualiteAr = 'منخرط';
   }

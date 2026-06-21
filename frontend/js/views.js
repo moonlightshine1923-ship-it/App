@@ -1,12 +1,18 @@
 // ===== Vues de l'application (Admin & Président : mêmes droits) =====
+
 const Views = (() => {
+
   const { $, esc, toast, openModal, closeModal, confirm } = UI;
+
   let REF = null;
+
   let ROLE = 'admin';
+
 
   function setRef(r) { REF = r; }
   function setRole(r) { ROLE = r; }
   function container() { return $('#viewContainer'); }
+
 
   function wilayaOptions(sel) {
     return REF.wilayas.map((w) => `<option value="${w.code}" ${w.code === sel ? 'selected' : ''}>${w.code} — ${esc(w.nom)}</option>`).join('');
@@ -20,7 +26,21 @@ const Views = (() => {
   function niveauOptions(sel) {
     return REF.niveaux.map((n) => `<option ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
   }
-  function fmtDate(d) { return d ? String(d).slice(0, 10) : '—'; }
+  function fmtDate(d) {
+    if (!d) return '—';
+    const str = String(d);
+    if (str.includes('T')) {
+      const dateObj = new Date(d);
+      if (!isNaN(dateObj)) {
+        const yr = dateObj.getFullYear();
+        const mo = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const da = String(dateObj.getDate()).padStart(2, '0');
+        return `${yr}-${mo}-${da}`;
+      }
+    }
+    return str.slice(0, 10);
+  }
+
 
   /* ============ DASHBOARD (Admin & Président) ============ */
   async function dashboard() {
@@ -59,10 +79,12 @@ const Views = (() => {
       </div>`;
   }
 
+
   function statCard(ico, val, lbl) {
     return `<div class="stat-card"><div class="stat-ico">${ico}</div>
       <div class="stat-val">${val}</div><div class="stat-lbl">${esc(lbl)}</div></div>`;
   }
+
 
   /* ============ LISTE ADHÉRENTS ============ */
   async function adherentsList() {
@@ -76,6 +98,7 @@ const Views = (() => {
         <button class="btn btn-gold" id="addAdhBtn">+ Nouvel adhérent</button>
       </div>
       <div id="adhTable"><div class="muted">Chargement…</div></div>`;
+
 
     async function load() {
       const params = {};
@@ -93,12 +116,13 @@ const Views = (() => {
     load();
   }
 
+
   function renderAdhTable(list) {
     const t = $('#adhTable');
     if (!list.length) { t.innerHTML = UI.emptyState('👤', 'Aucun adhérent trouvé.'); return; }
     t.innerHTML = `<div class="table-wrap"><table class="data">
       <thead><tr>
-        <th>Matricule</th><th>Nom & Prénom</th><th>Téléphone</th><th>Wilaya</th><th>Type</th><th>Niveau</th><th>Adhésion</th><th></th>
+        <th>Matricule</th><th>Nom & Prénom</th><th>Téléphone</th><th>Wilaya</th><th>Type</th><th>Carte</th><th>Adhésion</th><th></th>
       </tr></thead><tbody>
       ${list.map((a) => `<tr>
         <td><span class="mono">${esc(a.matricule)}</span></td>
@@ -127,10 +151,15 @@ const Views = (() => {
     });
   }
 
+
   /* ----- Formulaire adhérent ----- */
   function adherentForm(adh, onDone) {
     const isEdit = !!adh;
     const today = new Date().toISOString().slice(0, 10);
+    const currTypeCode = adh?.type_code || 'AD';
+    const currNiveau = adh?.niveau || 'Adhérent Simple';
+
+
     openModal(isEdit ? "Modifier l'adhérent" : 'Nouvel adhérent', `
       <form id="adhForm">
         <div class="form-grid">
@@ -144,11 +173,21 @@ const Views = (() => {
           <div class="field"><label>Numéro du document *</label><input name="doc_numero" id="fDocNum" value="${esc(adh?.doc_numero || '')}" required />
             <small class="muted" id="docHint"></small></div>
           <div class="field"><label>Wilaya *</label><select name="wilaya_code" id="fWilaya" required>${wilayaOptions(adh?.wilaya_code || '16')}</select></div>
-          <div class="field"><label>Type d'adhérent *</label><select name="type_code" id="fType" required>${typeOptions(adh?.type_code || 'AD')}</select></div>
-          <div class="field"><label>Niveau d'adhésion *</label><select name="niveau" required>${niveauOptions(adh?.niveau || 'Adhérent Simple')}</select></div>
+          <div class="field">
+            <label>Type d'adhérent *</label>
+            <select id="fTypeSelect" required>
+              <option value="Adhérent Simple" data-code="AD" ${currTypeCode === 'AD' && !currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent simple (AD)</option>
+              <option value="Adhérent Gold" data-code="AD" ${currTypeCode === 'AD' && currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent gold (AD)</option>
+              <option value="Membre Actif" data-code="MA" ${currTypeCode === 'MA' ? 'selected' : ''}>Membre Actif (MA)</option>
+              <option value="Conseiller" data-code="CR" ${currTypeCode === 'CR' ? 'selected' : ''}>Conseiller (CR)</option>
+            </select>
+            <input type="hidden" name="type_code" id="fTypeCode" value="${esc(currTypeCode)}" />
+            <input type="hidden" name="niveau" id="fNiveau" value="${esc(currNiveau)}" />
+          </div>
           <div class="field"><label>Date d'adhésion *</label><input type="date" name="date_adhesion" id="fDate" value="${esc(adh ? fmtDate(adh.date_adhesion) : today)}" required /></div>
           <div class="field"><label>Année (auto)</label><input id="fAnnee" value="${adh?.annee || new Date(today).getFullYear()}" disabled /></div>
           <div class="field"><label>Photo</label><input type="file" name="photo" accept="image/*" /></div>
+          <div class="field full"><label>Description / Notes</label><textarea name="description" rows="3" placeholder="Informations complémentaires, observations…" style="resize:vertical">${esc(adh?.description || '')}</textarea></div>
         </div>
         <div class="field full" style="margin-top:6px">
           <label>Matricule (généré automatiquement)</label>
@@ -161,6 +200,7 @@ const Views = (() => {
         </div>
       </form>`, true);
 
+
     function updateDocHint() {
       const sel = $('#fDocType');
       const opt = sel.options[sel.selectedIndex];
@@ -172,20 +212,28 @@ const Views = (() => {
         : `Entre ${min} et ${max} caractères.`;
     }
     async function refreshMatricule() {
-      const w = $('#fWilaya').value, t = $('#fType').value;
+      const w = $('#fWilaya').value, t = $('#fTypeCode').value;
       const an = $('#fDate').value ? new Date($('#fDate').value).getFullYear() : new Date().getFullYear();
       $('#fAnnee').value = an;
       try {
         const r = await API.previewMatricule(w, t, an);
-        $('#matPreview').textContent = r.matricule + (isEdit ? '  (recalculé si modifié)' : '');
+        if (r && r.matricule) {
+          $('#matPreview').textContent = r.matricule + (isEdit ? '  (recalculé si modifié)' : '');
+        }
       } catch {}
     }
     $('#fDocType').onchange = updateDocHint;
     $('#fWilaya').onchange = refreshMatricule;
-    $('#fType').onchange = refreshMatricule;
+    $('#fTypeSelect').onchange = () => {
+      const opt = $('#fTypeSelect').options[$('#fTypeSelect').selectedIndex];
+      $('#fTypeCode').value = opt.dataset.code;
+      $('#fNiveau').value = opt.value;
+      refreshMatricule();
+    };
     $('#fDate').onchange = refreshMatricule;
     updateDocHint();
     if (!isEdit) refreshMatricule();
+
 
     $('#adhCancel').onclick = closeModal;
     $('#adhForm').onsubmit = async (e) => {
@@ -201,6 +249,7 @@ const Views = (() => {
     };
   }
 
+
   /* ----- Détail adhérent ----- */
   async function adherentDetail(id) {
     const a = await API.adherent(id);
@@ -215,8 +264,10 @@ const Views = (() => {
         </div>
       </div>
       <div class="detail-grid">
-        ${detailItem('Nom (arabe)', a.nom_ar || '—')}
-        ${detailItem('Prénom (arabe)', a.prenom_ar || '—')}
+        ${detailItem('Nom (Français)', a.nom || '—')}
+        ${detailItem('Prénom (Français)', a.prenom || '—')}
+        ${detailItem('Nom (Arabe)', a.nom_ar || '—')}
+        ${detailItem('Prénom (Arabe)', a.prenom_ar || '—')}
         ${detailItem('Téléphone', a.telephone || '—')}
         ${detailItem('NIN', a.nin || '—')}
         ${detailItem(a.doc_type_libelle, a.doc_numero || '—')}
@@ -224,33 +275,46 @@ const Views = (() => {
         ${detailItem("Date d'adhésion", fmtDate(a.date_adhesion))}
         ${detailItem('Année', a.annee)}
       </div>
+      ${a.description ? `<div class="panel" style="margin-top:14px">
+        <div class="panel-head"><h3>📝 Description / Notes</h3></div>
+        <div style="line-height:1.6;white-space:pre-wrap">${esc(a.description)}</div>
+      </div>` : ''}
       <div class="modal-foot">
+        <button class="btn btn-ghost" id="dDossier">📄 Dossier à remplir</button>
         <button class="btn btn-ghost" id="dCarte">📇 Carte (recto/verso)</button>
         <button class="btn btn-dark" id="dEdit">✎ Modifier</button>
         <button class="btn btn-gold" id="dClose">Fermer</button>
       </div>`, true);
 
+
     if (a.photo) API.fileUrl(a.photo).then((url) => { $('#detailPhoto').innerHTML = `<img src="${url}" class="profile-photo" />`; }).catch(() => {});
     $('#dClose').onclick = closeModal;
+    $('#dDossier').onclick = () => downloadDossier(a.id);
     $('#dCarte').onclick = () => downloadCarte(a.id, a.matricule);
     $('#dEdit').onclick = () => adherentForm(a, () => { closeModal(); adherentsList(); });
   }
+
 
   function detailItem(lbl, val) {
     return `<div class="detail-item"><div class="d-lbl">${esc(lbl)}</div><div class="d-val">${esc(val)}</div></div>`;
   }
 
-  async function downloadCarte(id, matricule) {
+
+  function downloadDossier(id) {
     try {
-      const res = await fetch('/api/adherents/' + id + '/carte', { headers: { Authorization: 'Bearer ' + API.getToken() } });
-      if (!res.ok) throw new Error('Erreur');
-      const html = await res.text();
-      const win = window.open('', '_blank');
-      if (!win) { toast('Autorisez les pop-ups pour afficher la carte.', 'error'); return; }
-      win.document.open(); win.document.write(html); win.document.close();
-      toast('Carte générée (Imprimer / Enregistrer en PDF dans le nouvel onglet).');
-    } catch { toast('Impossible de générer la carte.', 'error'); }
+      const win = window.open('/api/adherents/' + id + '/dossier?token=' + API.getToken(), '_blank');
+      if (!win) toast('Autorisez les pop-ups pour afficher le dossier.', 'error');
+    } catch { toast('Impossible d\'ouvrir le dossier.', 'error'); }
   }
+
+
+  function downloadCarte(id, matricule) {
+    try {
+      const win = window.open('/api/adherents/' + id + '/carte?token=' + API.getToken(), '_blank');
+      if (!win) toast('Autorisez les pop-ups pour afficher la carte.', 'error');
+    } catch { toast('Impossible d\'ouvrir la carte.', 'error'); }
+  }
+
 
   /* ============ DEMANDES (déposées depuis le site web) ============ */
   // Accès réservé : Président & Administrateur.
@@ -291,6 +355,7 @@ const Views = (() => {
     load();
   }
 
+
   function renderDemTable(list) {
     const t = $('#demTable');
     if (!list.length) { t.innerHTML = UI.emptyState('📨', 'Aucune demande.'); return; }
@@ -321,6 +386,7 @@ const Views = (() => {
       });
     });
   }
+
 
   async function demandeDetail(id) {
     const d = await API.demande(id);
@@ -379,6 +445,7 @@ const Views = (() => {
     };
   }
 
+
   /* ============ DOCUMENTS ============ */
   async function documentsList() {
     const c = container();
@@ -434,6 +501,7 @@ const Views = (() => {
     };
     load();
   }
+
 
   /* ============ PARAMÈTRES ============ */
   function parametres() {
@@ -498,6 +566,7 @@ const Views = (() => {
     loadBackups();
   }
 
+
   /* ============ AGENT DE SAISIE : ajout d'adhérent uniquement ============ */
   function saisieAjout() {
     const c = container();
@@ -514,6 +583,7 @@ const Views = (() => {
       setTimeout(() => { $('#saisieRecap').innerHTML = ''; }, 4000);
     });
   }
+
 
   /* ============ COMPTES UTILISATEURS (admin & président) ============ */
   async function comptesList() {

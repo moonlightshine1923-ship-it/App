@@ -12,7 +12,9 @@ export function signToken(user) {
 
 export function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  // La ligne ci-dessous permet enfin de lire le ?token= passé dans l'URL par le navigateur :
+  const token = header.startsWith('Bearer ') ? header.slice(7) : (req.query.token || null);
+  
   if (!token) return res.status(401).json({ error: 'Authentification requise.' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
@@ -22,7 +24,6 @@ export function authenticate(req, res, next) {
   }
 }
 
-// roles autorisés ; vide = tous les utilisateurs authentifiés
 export function authorize(...roles) {
   return (req, res, next) => {
     if (roles.length && !roles.includes(req.user.role)) {

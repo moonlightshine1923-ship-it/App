@@ -1,8 +1,6 @@
 import mysql from 'mysql2/promise';
 import { CONFIG } from './config.js';
 
-// ===== Configuration MySQL (compatible XAMPP / phpMyAdmin) =====
-// Valeurs issues de backend/config.js (modifiable) ou des variables d'environnement.
 const config = {
   host: CONFIG.db.host,
   port: CONFIG.db.port,
@@ -12,6 +10,7 @@ const config = {
   waitForConnections: true,
   connectionLimit: 10,
   charset: 'utf8mb4',
+  dateStrings: true,
 };
 
 let pool;
@@ -37,7 +36,6 @@ export async function query(sql, params = []) {
   const [rows] = await getPool().execute(sql, params);
   return rows;
 }
-// Pour les requêtes ne supportant pas les paramètres préparés (SHOW, DDL…)
 export async function raw(sql) {
   const [rows] = await getPool().query(sql);
   return rows;
@@ -56,7 +54,6 @@ async function hasColumn(table, col) {
   return r.length > 0;
 }
 
-// ===== Création des tables =====
 export async function initSchema() {
   // --- Adhérents ---
   await query(`
@@ -82,7 +79,7 @@ export async function initSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  // --- Comptes (admin & président uniquement — les adhérents ne se connectent pas) ---
+  // --- Comptes ---
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -93,39 +90,15 @@ export async function initSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  // --- Demandes (déposées depuis le site web public) ---
+  // Table des pièces additionnelles sans clé étrangère stricte
   await query(`
-    CREATE TABLE IF NOT EXISTS demandes (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      numero VARCHAR(30) UNIQUE NOT NULL,
-      nom VARCHAR(100) NOT NULL,
-      prenom VARCHAR(100) NOT NULL,
-      email VARCHAR(150),
-      telephone VARCHAR(30),
-      wilaya_code VARCHAR(5),
-      type_demande VARCHAR(80),
-      matricule VARCHAR(40),
-      objet VARCHAR(200) NOT NULL,
-      description TEXT,
-      priorite VARCHAR(20) NOT NULL DEFAULT 'Normale',
-      statut VARCHAR(20) NOT NULL DEFAULT 'En attente',
-      affecte_a VARCHAR(150),
-      reponse TEXT,
-      source VARCHAR(20) DEFAULT 'site',
-      adherent_id INT DEFAULT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS demande_pieces (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      demande_id INT NOT NULL,
+    CREATE TABLE IF NOT EXISTS demandes_site_pieces (
+      id BIGINT(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      demande_id BIGINT(20) UNSIGNED NOT NULL,
       filename VARCHAR(255) NOT NULL,
       original_name VARCHAR(255),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT fk_piece_dem FOREIGN KEY (demande_id) REFERENCES demandes(id) ON DELETE CASCADE
+      KEY idx_demande_site_id (demande_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
@@ -144,9 +117,7 @@ export async function initSchema() {
   await ensureMigrations();
 }
 
-// Migrations pour les bases déjà existantes (mise à jour de version)
 async function ensureMigrations() {
-  // Adhérents : supprimer ancien statut, migrer rc -> doc_type/doc_numero
   try {
     const cols = await query("SHOW COLUMNS FROM adherents LIKE 'statut'");
     if (cols.length) await query('ALTER TABLE adherents DROP COLUMN statut');
@@ -163,32 +134,35 @@ async function ensureMigrations() {
     }
   } catch (e) { console.warn('  Migration doc_type/doc_numero :', e.message); }
 
-  // Adhérents : ajout des champs nom/prénom en arabe (non destructif)
   try {
     if (!(await hasColumn('adherents', 'nom_ar'))) await query('ALTER TABLE adherents ADD COLUMN nom_ar VARCHAR(100) AFTER prenom');
     if (!(await hasColumn('adherents', 'prenom_ar'))) await query('ALTER TABLE adherents ADD COLUMN prenom_ar VARCHAR(100) AFTER nom_ar');
   } catch (e) { console.warn('  Migration nom_ar/prenom_ar :', e.message); }
 
-  // Demandes : passage du modèle "lié à un adhérent" vers "déposée depuis le site"
-  try { await query('ALTER TABLE demandes DROP FOREIGN KEY fk_dem_adherent'); } catch {}
-  for (const [col, ddl] of [
-    ['nom', "ADD COLUMN nom VARCHAR(100) NOT NULL DEFAULT ''"],
-    ['prenom', "ADD COLUMN prenom VARCHAR(100) NOT NULL DEFAULT ''"],
-    ['email', 'ADD COLUMN email VARCHAR(150)'],
-    ['telephone', 'ADD COLUMN telephone VARCHAR(30)'],
-    ['wilaya_code', 'ADD COLUMN wilaya_code VARCHAR(5)'],
-    ['type_demande', 'ADD COLUMN type_demande VARCHAR(80)'],
-    ['matricule', 'ADD COLUMN matricule VARCHAR(40)'],
-    ['objet', "ADD COLUMN objet VARCHAR(200) NOT NULL DEFAULT 'Demande'"],
-    ['source', "ADD COLUMN source VARCHAR(20) DEFAULT 'site'"],
-  ]) {
-    try { if (!(await hasColumn('demandes', col))) await query(`ALTER TABLE demandes ${ddl}`); } catch {}
-  }
-  try { await query('ALTER TABLE demandes MODIFY adherent_id INT NULL'); } catch {}
-
-  // Index uniques (ignorés s'ils existent déjà ou si données en double)
   for (const [name, col] of [['uq_adh_nin', 'nin'], ['uq_adh_tel', 'telephone'], ['uq_adh_doc', 'doc_numero']]) {
     try { await query(`ALTER TABLE adherents ADD UNIQUE KEY ${name} (${col})`); } catch {}
+  }
+
+  // Ajout automatique en douceur des colonnes de gestion administrative dans votre table demandes_site officielle :
+  for (const [col, ddl] of [
+    ['numero', "ADD COLUMN numero VARCHAR(30)"],
+    ['statut', "ADD COLUMN statut VARCHAR(20) NOT NULL DEFAULT 'En attente'"],
+    ['affecte_a', "ADD COLUMN affecte_a VARCHAR(150)"],
+    ['reponse', "ADD COLUMN reponse TEXT"],
+    ['source', "ADD COLUMN source VARCHAR(20) DEFAULT 'site'"],
+  ]) {
+    try {
+      if (!(await hasColumn('demandes_site', col))) {
+        await query(`ALTER TABLE demandes_site ${ddl}`);
+        if (col === 'numero') {
+          // Si on vient d'ajouter la colonne, on génère un identifiant pour vos lignes existantes
+          const list = await query('SELECT id FROM demandes_site WHERE numero IS NULL');
+          for (let i = 0; i < list.length; i++) {
+            await query('UPDATE demandes_site SET numero = ? WHERE id = ?', [`DEM-2026-${String(i+1).padStart(4,'0')}`, list[i].id]);
+          }
+        }
+      }
+    } catch {}
   }
 }
 

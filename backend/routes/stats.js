@@ -20,8 +20,8 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
     const mois = new Date().toISOString().slice(0, 7);
     const nouveauxMois = (await get("SELECT COUNT(*) AS c FROM adherents WHERE DATE_FORMAT(date_adhesion, '%Y-%m') = ?", [mois])).c;
 
-    const demandesParStatut = await query('SELECT statut, COUNT(*) AS c FROM demandes GROUP BY statut');
-    const totalDemandes = (await get('SELECT COUNT(*) AS c FROM demandes')).c;
+    const demandesParStatut = await query('SELECT statut, COUNT(*) AS c FROM demandes_site GROUP BY statut');
+    const totalDemandes = (await get('SELECT COUNT(*) AS c FROM demandes_site')).c;
     const demStatut = (s) => (demandesParStatut.find((x) => x.statut === s)?.c) || 0;
     const demandesOuvertes = demStatut('Nouvelle') + demStatut('En cours') + demStatut('En attente');
     const demandesCloturees = demStatut('Clôturée') + demStatut('Résolue');

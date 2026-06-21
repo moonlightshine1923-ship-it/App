@@ -6,7 +6,7 @@ import { connect } from './db.js';
 import { ensureSeed } from './seed.js';
 import { authenticate, authorize } from './middleware/auth.js';
 import { scheduleAutoBackup, runBackup, listBackups, backupDir } from './backup.js';
-import { verifyMailer } from './mailer.js';
+// Les imports mailer ont été totalement supprimés
 import { CONFIG } from './config.js';
 
 import authRoutes from './routes/auth.js';
@@ -63,8 +63,16 @@ app.get('/api/backup/download', authenticate, authorize('admin', 'president'), (
 // Fichiers uploadés (protégés)
 app.use('/uploads', authenticate, express.static(path.join(ROOT, 'uploads')));
 
-// Front-end statique
-app.use(express.static(path.join(ROOT, 'frontend')));
+// Front-end statique (avec désactivation complète du cache navigateur)
+app.use(express.static(path.join(ROOT, 'frontend'), {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res, filePath) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 app.use((req, res) => {
   res.sendFile(path.join(ROOT, 'frontend', 'index.html'));
 });
@@ -75,13 +83,12 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 
 (async () => {
   try {
     await connect();
     await ensureSeed();
-    await verifyMailer();          // vérifie la configuration email
     scheduleAutoBackup();         // sauvegarde automatique (jeudi 16h par défaut)
     app.listen(PORT, () => {
       console.log(`\n  OPA — Organisation des Patronats d'Algérie`);
