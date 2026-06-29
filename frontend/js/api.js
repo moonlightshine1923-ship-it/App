@@ -5,7 +5,7 @@ const API = (() => {
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
   function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
   function clearToken() { localStorage.removeItem(TOKEN_KEY); }
-
+  
   async function request(method, url, body, isForm = false) {
     const headers = {};
     const token = getToken();
@@ -80,12 +80,18 @@ const API = (() => {
     cloturerDemande: (id) => request('PATCH', `/demandes/${id}/cloturer`),
     deleteDemande: (id) => request('DELETE', '/demandes/' + id),
 
+    // Section documents nettoyée (La suppression pointe vers ton nouveau contrôleur)
     documents: (params = {}) => {
       const q = new URLSearchParams(params).toString();
       return request('GET', '/documents' + (q ? '?' + q : ''));
     },
     createDocument: (form) => request('POST', '/documents', form, true),
     deleteDocument: (id) => request('DELETE', '/documents/' + id),
+    deleteGroupedDocuments: (ids) => request('POST', '/documents/suppression-groupes', { ids }),
+
+    /* --- Méthodes pour la gestion documentaire --- */
+    adherentsStatut: () => request('GET', '/documents/adherents-statut'),
+    fusionnerDossier: (adherentId, formData) => request('POST', `/documents/fusionner/${adherentId}`, formData, true),
 
     // Renvoie un blob URL authentifié pour un fichier protégé
     fileUrl: async (relPath) => {

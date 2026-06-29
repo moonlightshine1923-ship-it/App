@@ -2,7 +2,7 @@ import express from 'express';
 import { get, query, run } from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { uploadDoc } from '../middleware/upload.js';
-import { STATUTS_DEMANDE, PRIORITES, TYPES_DEMANDE, WILAYAS, wilayaNom } from '../data/wilayas.js';
+import { STATUTS_DEMANDE, PRIORITES, WILAYAS, wilayaNom } from '../data/wilayas.js'; // Retrait de TYPES_DEMANDE s'il n'est plus utilisé ici
 
 const router = express.Router();
 
@@ -16,18 +16,15 @@ async function numeroDemande() {
 async function enrich(d) {
   if (!d) return d;
   
-  // Traduction parfaite pour l'interface front-end OPA depuis vos noms de colonnes officiels :
-  const objet = d.titre_demande || d.objet || d.type_demande || 'Demande';
+  const objet = d.titre_demande || d.objet || 'Demande';
   const created_at = d.date_creation || d.created_at || '';
   const wilaya_nom = d.wilaya || '—';
   
   let pieces = [];
-  // Gère votre colonne fichier_joint si elle contient une URL ou un nom de fichier
   if (d.fichier_joint && typeof d.fichier_joint === 'string') {
     pieces.push({ filename: d.fichier_joint, original_name: d.fichier_joint.split('/').pop() || 'Pièce jointe' });
   }
 
-  // Récupère ensuite les pièces additionnelles
   try {
     const attachRows = await query('SELECT * FROM demandes_site_pieces WHERE demande_id = ?', [d.id]);
     for (const r of attachRows) {
@@ -44,30 +41,29 @@ async function enrich(d) {
   };
 }
 
-// ===== Dépôt PUBLIC depuis le site web (sans authentification) =====
+// ===== Dépôt PUBLIC depuis le site web =====
 router.post('/public', uploadDoc.array('pieces', 5), async (req, res) => {
   try {
     const b = req.body;
-    if (!b.nom || !b.prenom || !b.objet) {
-      return res.status(400).json({ error: 'Nom, prénom et objet sont obligatoires.' });
+    if (!b.nom || !b.prenom || !b.num_tel || !b.objet) {
+      return res.status(400).json({ error: 'Nom, prénom, numéro de téléphone et objet sont obligatoires.' });
     }
     const priorite = PRIORITES.includes(b.priorite) ? b.priorite : 'Normale';
     const wilaya = b.wilaya_code || b.wilaya || 'Alger';
-    const type_demande = b.type_demande || b.objet;
     const numero = await numeroDemande();
 
+    // Retrait de la colonne type_demande et de son '?' correspondant
     const result = await run(
-      `INSERT INTO demandes_site (numero, nom, prenom, matricule, wilaya, titre_demande, description, type_demande, priorite, statut, source)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO demandes_site (numero, nom, prenom, num_tel, matricule, wilaya, titre_demande, priorite, statut, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         numero,
         b.nom.trim(),
         b.prenom.trim(),
+        b.num_tel.trim(),
         b.matricule ? b.matricule.trim() : null,
         wilaya,
         b.objet.trim(),
-        b.description || null,
-        type_demande,
         priorite,
         'En attente',
         'site'
@@ -85,22 +81,24 @@ router.post('/public', uploadDoc.array('pieces', 5), async (req, res) => {
     }
 
     res.status(201).json({ ok: true, numero });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    console.error("Erreur serveur SQL :", e);
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 // ===== Consultation / gestion (admin & président uniquement) =====
 router.get('/', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
-    const { statut, priorite, wilaya, type_demande, q } = req.query;
+    const { statut, priorite, wilaya, q } = req.query; // Retrait de type_demande
     let sql = 'SELECT * FROM demandes_site WHERE 1=1';
     const params = [];
     if (statut) { sql += ' AND statut = ?'; params.push(statut); }
     if (priorite) { sql += ' AND priorite = ?'; params.push(priorite); }
     if (wilaya) { sql += ' AND wilaya LIKE ?'; params.push(`%${wilaya}%`); }
-    if (type_demande) { sql += ' AND (type_demande = ? OR titre_demande = ?)'; params.push(type_demande, type_demande); }
     if (q) {
-      sql += ' AND (titre_demande LIKE ? OR numero LIKE ? OR nom LIKE ? OR prenom LIKE ? OR matricule LIKE ?)';
-      const l = `%${q}%`; params.push(l, l, l, l, l);
+      sql += ' AND (titre_demande LIKE ? OR numero LIKE ? OR nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR num_tel LIKE ?)';
+      const l = `%${q}%`; params.push(l, l, l, l, l, l);
     }
     sql += ' ORDER BY date_creation DESC';
     const rows = await query(sql, params);
@@ -118,7 +116,6 @@ router.get('/:id', authenticate, authorize('admin', 'president'), async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Mise à jour (statut, priorité, affectation, réponse)
 router.patch('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
     const d = await get('SELECT * FROM demandes_site WHERE id = ?', [req.params.id]);

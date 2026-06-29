@@ -391,7 +391,7 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
     line-height: 1;
 }
   
-  .t-nom    { right:13.30%; top:39.85%; font-size:2.6mm; }
+  .t-nom    { right:14.45%; top:39.85%; font-size:2.6mm; }
   .t-prenom { right:13.70%; top:46.60%; font-size:2.6mm; }
   .t-type   { right:13.78%; top:54.05%; font-size:2.8mm; font-weight:900; color:#232323; }
 

@@ -43,6 +43,12 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
+.code-display {
+    font-family: 'Courier New', Courier, monospace !important;
+    font-weight: bold !important;
+    color: var(--gold) !important;
+    font-size: 15px !important;
+}
 .hidden { display: none !important; }
 a { color: var(--gold-2); }
 

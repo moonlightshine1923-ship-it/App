@@ -8,11 +8,9 @@ const Views = (() => {
 
   let ROLE = 'admin';
 
-
   function setRef(r) { REF = r; }
   function setRole(r) { ROLE = r; }
   function container() { return $('#viewContainer'); }
-
 
   function wilayaOptions(sel) {
     return REF.wilayas.map((w) => `<option value="${w.code}" ${w.code === sel ? 'selected' : ''}>${w.code} — ${esc(w.nom)}</option>`).join('');
@@ -41,64 +39,347 @@ const Views = (() => {
     return str.slice(0, 10);
   }
 
+  /* ============ DASHBOARD PROFESSIONNEL ============ */
 
-  /* ============ DASHBOARD (Admin & Président) ============ */
   async function dashboard() {
     const c = container();
     c.innerHTML = '<div class="muted">Chargement du tableau de bord…</div>';
+
     const s = await API.stats();
     const a = s.adherents;
+    const now = new Date();
+    const heure = now.getHours();
+    const salutation = heure < 12 ? 'Bonjour' : heure < 18 ? 'Bon après-midi' : 'Bonsoir';
+    const roleLabel = ROLE === 'president' ? 'Président' : 'Administrateur';
+
+    // Calcul taux de croissance (simulation si pas fourni par l'API)
+    const tauxTraitement = s.demandes.tauxTraitement || 0;
+    const tauxUrgence = s.demandes.parStatut
+      ? (s.demandes.parStatut.find(d => d.statut === 'Urgente')?.c || 0)
+      : 0;
+
     c.innerHTML = `
-      <div class="stat-grid">
-        ${statCard('👥', s.totalAdherents, 'Total adhérents')}
-        ${statCard('★', a.gold, 'Adhérents Gold')}
-        ${statCard('🤝', a.MA, 'Membres Actifs')}
-        ${statCard('🎓', a.CR, 'Conseillers')}
-        ${statCard('📨', s.demandes.ouvertes, 'Demandes ouvertes')}
-        ${statCard('✅', s.demandes.cloturees, 'Demandes clôturées')}
-        ${statCard('🆕', s.nouveauxMois, 'Nouveaux ce mois')}
-        ${statCard('📊', s.demandes.tauxTraitement + '%', 'Taux de traitement')}
-      </div>
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-head"><h3>Répartition par type</h3></div>
-          ${Charts.donut([
-            { label: 'Adhérent (AD)', value: a.AD },
-            { label: 'Membre Actif (MA)', value: a.MA },
-            { label: 'Conseiller (CR)', value: a.CR },
-          ])}
+      <style>
+        .dash-header {
+          display:flex;align-items:center;justify-content:space-between;
+          margin-bottom:28px;padding-bottom:20px;
+          border-bottom:1px solid var(--border, #e2e8f0);
+        }
+        .dash-header h2 { font-size:22px; font-weight:700; color:var(--text); margin:0 0 4px; }
+        .dash-header .sub { font-size:13px; color:var(--muted, #94a3b8); }
+        .dash-header .role-badge {
+          display:inline-flex;align-items:center;gap:6px;
+          background:var(--gold, #c8a44e);color:#fff;
+          padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;
+          letter-spacing:.3px;text-transform:uppercase;
+        }
+        .kpi-row {
+          display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+          gap:16px;margin-bottom:28px;
+        }
+        .kpi {
+          background:var(--card, #fff);border:1px solid var(--border, #e2e8f0);
+          border-radius:12px;padding:20px;position:relative;overflow:hidden;
+          transition:box-shadow .2s;
+        }
+        .kpi:hover { box-shadow:0 4px 20px rgba(0,0,0,.07); }
+        .kpi-accent {
+          position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px;
+        }
+        .kpi .kpi-ico {
+          width:40px;height:40px;border-radius:10px;
+          display:flex;align-items:center;justify-content:center;
+          font-size:18px;margin-bottom:12px;
+        }
+        .kpi .kpi-val { font-size:28px;font-weight:800;color:var(--text);line-height:1; }
+        .kpi .kpi-lbl { font-size:12px;color:var(--muted, #94a3b8);margin-top:6px;font-weight:500;letter-spacing:.2px; }
+        .kpi .kpi-sub { font-size:11px;color:var(--muted, #94a3b8);margin-top:4px; }
+
+        .dash-grid { display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px; }
+        .dash-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-bottom:28px; }
+        .dash-panel {
+          background:var(--card, #fff);border:1px solid var(--border, #e2e8f0);
+          border-radius:12px;overflow:hidden;
+        }
+        .dash-panel-head {
+          display:flex;align-items:center;justify-content:space-between;
+          padding:16px 20px;border-bottom:1px solid var(--border, #e2e8f0);
+        }
+        .dash-panel-head h3 { font-size:14px;font-weight:700;color:var(--text);margin:0; }
+        .dash-panel-body { padding:20px; }
+
+        .quick-actions { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+        .qa-btn {
+          display:flex;align-items:center;gap:12px;
+          padding:14px 16px;border-radius:10px;border:1px solid var(--border, #e2e8f0);
+          background:var(--card, #fff);cursor:pointer;transition:all .15s;
+          font-size:13px;font-weight:600;color:var(--text);
+        }
+        .qa-btn:hover { border-color:var(--gold, #c8a44e);background:rgba(200,164,78,.04); }
+        .qa-btn .qa-ico {
+          width:38px;height:38px;border-radius:9px;
+          display:flex;align-items:center;justify-content:center;font-size:16px;
+          flex-shrink:0;
+        }
+
+        .mini-table { width:100%;border-collapse:collapse; }
+        .mini-table th {
+          text-align:left;font-size:11px;font-weight:600;color:var(--muted, #94a3b8);
+          padding:8px 10px;border-bottom:1px solid var(--border, #e2e8f0);
+          text-transform:uppercase;letter-spacing:.4px;
+        }
+        .mini-table td { padding:10px;font-size:13px;color:var(--text);border-bottom:1px solid var(--border, #e2e8f0); }
+        .mini-table tr:last-child td { border-bottom:none; }
+
+        .progress-bar-wrap {
+          height:8px;background:var(--border, #e2e8f0);border-radius:4px;overflow:hidden;
+        }
+        .progress-bar-fill {
+          height:100%;border-radius:4px;transition:width .6s ease;
+        }
+        .metric-row { display:flex;align-items:center;justify-content:space-between;padding:10px 0; }
+        .metric-row + .metric-row { border-top:1px solid var(--border, #e2e8f0); }
+        .metric-label { font-size:13px;color:var(--text); }
+        .metric-val { font-size:14px;font-weight:700;color:var(--text); }
+        .metric-bar { flex:1;margin:0 16px;max-width:200px; }
+
+        .alert-banner {
+          display:flex;align-items:center;gap:12px;
+          padding:14px 18px;border-radius:10px;margin-bottom:20px;
+          font-size:13px;font-weight:500;
+        }
+        .alert-banner.alert-warn { background:#fef3c7;color:#92400e;border:1px solid #fcd34d; }
+        .alert-banner.alert-info { background:#dbeafe;color:#1e40af;border:1px solid #93c5fd; }
+        .alert-banner.alert-ok { background:#d1fae5;color:#065f46;border:1px solid #6ee7b7; }
+
+        @media (max-width:900px) {
+          .dash-grid, .dash-grid-3 { grid-template-columns:1fr; }
+          .kpi-row { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:560px) {
+          .kpi-row { grid-template-columns:1fr; }
+          .quick-actions { grid-template-columns:1fr; }
+        }
+      </style>
+
+      <!-- EN-TÊTE -->
+      <div class="dash-header">
+        <div>
+          <h2>${salutation}, ${esc(roleLabel)}</h2>
+          <div class="sub">${now.toLocaleDateString('fr-FR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</div>
         </div>
-        <div class="panel">
-          <div class="panel-head"><h3>Traitement des demandes</h3></div>
-          ${Charts.donut(s.demandes.parStatut.map((d) => ({ label: d.statut, value: d.c })))}
+        <div class="role-badge">⬥ ${esc(roleLabel)}</div>
+      </div>
+
+      <!-- ALERTE SI DEMANDES URGENTES -->
+      ${tauxUrgence > 0 ? `
+        <div class="alert-banner alert-warn">
+          <span style="font-size:18px">⚠️</span>
+          <span><b>${tauxUrgence} demande${tauxUrgence > 1 ? 's' : ''} urgente${tauxUrgence > 1 ? 's' : ''}</b> nécessite${tauxUrgence === 1 ? '' : 'nt'} votre attention immédiate.</span>
+          <button class="btn btn-dark btn-sm" style="margin-left:auto" onclick="Views.demandesList()">Traiter →</button>
+        </div>` : ''}
+
+      <!-- KPI PRINCIPAUX -->
+      <div class="kpi-row">
+        ${kpiCard('total', '👥', s.totalAdherents, 'Total adhérents', `${s.nouveauxMois} nouveau${s.nouveauxMois > 1 ? 'x' : ''} ce mois`, '#3b82f6')}
+        ${kpiCard('ad', '▣', a.AD, 'Adhérents (AD)', `dont ${a.gold} Gold`, '#6366f1')}
+        ${kpiCard('ma', '⬡', a.MA, 'Membres Actifs (MA)', `${a.MA ? ((a.MA/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#0891b2')}
+        ${kpiCard('cr', '◆', a.CR, 'Conseillers (CR)', `${a.CR ? ((a.CR/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#7c3aed')}
+        ${kpiCard('ouvertes', '📨', s.demandes.ouvertes, 'Demandes ouvertes', 'En attente de traitement', '#f59e0b')}
+        ${kpiCard('cloturees', '✓', s.demandes.cloturees, 'Demandes clôturées', `Taux : ${tauxTraitement}%`, '#10b981')}
+      </div>
+
+      <!-- RANGÉE : RÉPARTITION + TRAITEMENT DEMANDES -->
+      <div class="dash-grid">
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>▣ Répartition par type</h3></div>
+          <div class="dash-panel-body">
+            ${Charts.donut([
+              { label: 'Adhérent (AD)', value: a.AD },
+              { label: 'Membre Actif (MA)', value: a.MA },
+              { label: 'Conseiller (CR)', value: a.CR },
+            ])}
+            <div style="margin-top:14px">
+              ${metricBar('Adhérent', a.AD, s.totalAdherents, '#6366f1')}
+              ${metricBar('Membre Actif', a.MA, s.totalAdherents, '#0891b2')}
+              ${metricBar('Conseiller', a.CR, s.totalAdherents, '#7c3aed')}
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>📨 Traitement des demandes</h3></div>
+          <div class="dash-panel-body">
+            ${Charts.donut(s.demandes.parStatut.map((d) => ({ label: d.statut, value: d.c })))}
+            <div style="margin-top:14px">
+              <div class="metric-row">
+                <span class="metric-label">Taux de traitement</span>
+                <div class="metric-bar">
+                  <div class="progress-bar-wrap">
+                    <div class="progress-bar-fill" style="width:${tauxTraitement}%;background:#10b981"></div>
+                  </div>
+                </div>
+                <span class="metric-val" style="color:#10b981">${tauxTraitement}%</span>
+              </div>
+              <div class="metric-row">
+                <span class="metric-label">Demandes en attente</span>
+                <div class="metric-bar">
+                  <div class="progress-bar-wrap">
+                    <div class="progress-bar-fill" style="width:${s.totalAdherents ? (s.demandes.ouvertes/(s.demandes.ouvertes+s.demandes.cloturees||1))*100 : 0}%;background:#f59e0b"></div>
+                  </div>
+                </div>
+                <span class="metric-val" style="color:#f59e0b">${s.demandes.ouvertes}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h3>Répartition par wilaya (top 10)</h3></div>
-        ${s.parWilaya.length ? Charts.bars(s.parWilaya.slice(0, 10).map((w) => ({ label: w.nom, value: w.count }))) : UI.emptyState('🗺️', 'Aucune donnée.')}
+
+      <!-- RANGÉE : WILAYAS + ACTIONS RAPIDES -->
+      <div class="dash-grid">
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>🗺️ Répartition par wilaya (top 10)</h3></div>
+          <div class="dash-panel-body">
+            ${s.parWilaya.length ? Charts.bars(s.parWilaya.slice(0, 10).map((w) => ({ label: w.nom, value: w.count }))) : UI.emptyState('🗺️', 'Aucune donnée.')}
+          </div>
+        </div>
+
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>⚡ Actions rapides</h3></div>
+          <div class="dash-panel-body">
+            <div class="quick-actions">
+              <button class="qa-btn" id="qaAddAdh">
+                <div class="qa-ico" style="background:rgba(99,102,241,.1);color:#6366f1">➕</div>
+                <div><div>Nouvel adhérent</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Enregistrer un adhérent</div></div>
+              </button>
+              <button class="qa-btn" id="qaDemandes">
+                <div class="qa-ico" style="background:rgba(245,158,11,.1);color:#f59e0b">📨</div>
+                <div><div>Traiter les demandes</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">${s.demandes.ouvertes} en attente</div></div>
+              </button>
+              <button class="qa-btn" id="qaDocuments">
+                <div class="qa-ico" style="background:rgba(16,185,129,.1);color:#10b981">📁</div>
+                <div><div>Documents</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Gestion documentaire</div></div>
+              </button>
+              <button class="qa-btn" id="qaComptes">
+                <div class="qa-ico" style="background:rgba(124,58,237,.1);color:#7c3aed">👥</div>
+                <div><div>Comptes</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Gestion des utilisateurs</div></div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RANGÉE : STATS WILAYAS TABLEAU + RÉSUMÉ -->
+      <div class="dash-grid">
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>📊 Détail par wilaya</h3></div>
+          <div class="dash-panel-body" style="padding:0">
+            <div style="max-height:300px;overflow-y:auto">
+              <table class="mini-table">
+                <thead><tr><th>Wilaya</th><th>Adhérents</th><th>Part</th></tr></thead>
+                <tbody>
+                  ${s.parWilaya.slice(0, 15).map(w => `
+                    <tr>
+                      <td style="font-weight:600">${esc(w.nom)}</td>
+                      <td><span class="mono">${w.count}</span></td>
+                      <td>
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <div class="progress-bar-wrap" style="flex:1;max-width:80px">
+                            <div class="progress-bar-fill" style="width:${s.totalAdherents ? (w.count/s.totalAdherents*100) : 0}%;background:#3b82f6"></div>
+                          </div>
+                          <span style="font-size:11px;color:var(--muted, #94a3b8)">${s.totalAdherents ? (w.count/s.totalAdherents*100).toFixed(1) : 0}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-panel">
+          <div class="dash-panel-head"><h3>📋 Résumé exécutif</h3></div>
+          <div class="dash-panel-body">
+            <div class="metric-row">
+              <span class="metric-label">Total adhérents actifs</span>
+              <span class="metric-val">${s.totalAdherents}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Adhérents Gold</span>
+              <span class="metric-val" style="color:#c8a44e">${a.gold || 0}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Nouveaux ce mois</span>
+              <span class="metric-val" style="color:#3b82f6">${s.nouveauxMois}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Demandes en cours</span>
+              <span class="metric-val" style="color:#f59e0b">${s.demandes.ouvertes}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Demandes clôturées</span>
+              <span class="metric-val" style="color:#10b981">${s.demandes.cloturees}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Taux de traitement</span>
+              <span class="metric-val" style="color:${tauxTraitement >= 75 ? '#10b981' : tauxTraitement >= 50 ? '#f59e0b' : '#ef4444'}">${tauxTraitement}%</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Wilayas représentées</span>
+              <span class="metric-val">${s.parWilaya.length}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Bind quick actions
+    $('#qaAddAdh').onclick = () => adherentForm(null, adherentsList);
+    $('#qaDemandes').onclick = () => demandesList();
+    $('#qaDocuments').onclick = () => documentsList();
+    $('#qaComptes').onclick = () => comptesList();
+  }
+
+  function kpiCard(id, ico, val, lbl, sub, color) {
+    return `
+      <div class="kpi" id="kpi-${id}">
+        <div class="kpi-accent" style="background:${color}"></div>
+        <div class="kpi-ico" style="background:${color}15;color:${color}">${ico}</div>
+        <div class="kpi-val">${val}</div>
+        <div class="kpi-lbl">${esc(lbl)}</div>
+        <div class="kpi-sub">${esc(sub)}</div>
       </div>`;
   }
 
-
-  function statCard(ico, val, lbl) {
-    return `<div class="stat-card"><div class="stat-ico">${ico}</div>
-      <div class="stat-val">${val}</div><div class="stat-lbl">${esc(lbl)}</div></div>`;
+  function metricBar(label, value, total, color) {
+    const pct = total ? (value / total * 100).toFixed(1) : 0;
+    return `
+      <div class="metric-row">
+        <span class="metric-label">${esc(label)}</span>
+        <div class="metric-bar">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" style="width:${pct}%;background:${color}"></div>
+          </div>
+        </div>
+        <span class="metric-val" style="color:${color}">${value} <small style="font-weight:400;color:var(--muted, #94a3b8);font-size:11px">(${pct}%)</small></span>
+      </div>`;
   }
+/* ============ LISTE ADHÉRENTS ============ */
+/* ============ ADHÉRENTS ============ */
 
-
-  /* ============ LISTE ADHÉRENTS ============ */
   async function adherentsList() {
     const c = container();
     c.innerHTML = `
-      <div class="toolbar">
+      <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
         <input type="search" id="adhSearch" placeholder="Rechercher (nom, matricule, NIN, document, téléphone)…" />
         <select id="adhWilaya"><option value="">Toutes wilayas</option>${REF.wilayas.map((w) => `<option value="${w.code}">${w.code} — ${esc(w.nom)}</option>`).join('')}</select>
         <select id="adhType"><option value="">Tous types</option>${REF.types.map((t) => `<option value="${t.code}">${esc(t.libelle)}</option>`).join('')}</select>
         <button class="btn btn-dark" id="refreshAdhBtn" title="Rafraîchir">⟳ Rafraîchir</button>
         <button class="btn btn-gold" id="addAdhBtn">+ Nouvel adhérent</button>
+        <button class="btn btn-danger" id="bulkDeleteAdhBtn" style="display: none;">✕ Supprimer la sélection (<span id="bulkAdhCount">0</span>)</button>
       </div>
       <div id="adhTable"><div class="muted">Chargement…</div></div>`;
-
 
     async function load() {
       const params = {};
@@ -106,59 +387,135 @@ const Views = (() => {
       const w = $('#adhWilaya').value; if (w) params.wilaya = w;
       const t = $('#adhType').value; if (t) params.type = t;
       renderAdhTable(await API.adherents(params));
+      updateBulkButton(); // Réinitialise l'état du bouton après chargement
     }
+
+    // Gestion du bouton de suppression en masse
+    function updateBulkButton() {
+      const checkedBoxes = document.querySelectorAll('.adh-checkbox:checked');
+      const bulkBtn = $('#bulkDeleteAdhBtn');
+      const bulkCount = $('#bulkAdhCount');
+      
+      if (checkedBoxes.length > 0) {
+        bulkCount.textContent = checkedBoxes.length;
+        bulkBtn.style.display = 'inline-block';
+      } else {
+        bulkBtn.style.display = 'none';
+      }
+    }
+
+    // Clic sur la suppression groupée
+    $('#bulkDeleteAdhBtn').onclick = () => {
+      const checkedBoxes = document.querySelectorAll('.adh-checkbox:checked');
+      const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
+
+      confirm(`Supprimer définitivement ces ${idsToDelete.length} adhérents ?`, async () => {
+        try {
+          // Supprime tous les adhérents sélectionnés en parallèle
+          await Promise.all(idsToDelete.map(id => API.deleteAdherent(id)));
+          toast(`${idsToDelete.length} adhérents supprimés avec succès.`);
+          load();
+        } catch (err) {
+          toast('Erreur lors de la suppression groupée : ' + err.message, 'error');
+        }
+      });
+    };
+
+    // Écouteur global sur le conteneur pour mettre à jour le compteur en temps réel
+    c.addEventListener('change', (e) => {
+      if (e.target.classList.contains('adh-checkbox') || e.target.id === 'selectAllAdh') {
+        updateBulkButton();
+      }
+    });
+
     let timer;
     $('#adhSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(load, 280); };
     $('#adhWilaya').onchange = load;
     $('#adhType').onchange = load;
     $('#refreshAdhBtn').onclick = () => { load(); toast('Liste actualisée.'); };
-    $('#addAdhBtn').onclick = () => adherentForm(null, load);
+    $('#addAdhBtn').onclick = () => { id: adherentForm(null, load) };
     load();
   }
 
 
   function renderAdhTable(list) {
-    const t = $('#adhTable');
-    if (!list.length) { t.innerHTML = UI.emptyState('👤', 'Aucun adhérent trouvé.'); return; }
-    t.innerHTML = `<div class="table-wrap"><table class="data">
-      <thead><tr>
-        <th>Matricule</th><th>Nom & Prénom</th><th>Téléphone</th><th>Wilaya</th><th>Type</th><th>Carte</th><th>Adhésion</th><th></th>
-      </tr></thead><tbody>
-      ${list.map((a) => `<tr>
-        <td><span class="mono">${esc(a.matricule)}</span></td>
-        <td class="cell-strong">${esc(a.prenom)} ${esc(a.nom)}</td>
-        <td>${esc(a.telephone || '—')}</td>
-        <td>${esc(a.wilaya_nom)}</td>
-        <td>${UI.typeTag(a.type_libelle)}</td>
-        <td>${UI.niveauTag(a.niveau)}</td>
-        <td class="muted">${esc(fmtDate(a.date_adhesion))}</td>
-        <td><div class="row-actions">
-          <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
-          <button class="btn btn-dark btn-sm" data-edit="${a.id}">✎</button>
-          <button class="btn btn-danger btn-sm" data-del="${a.id}">✕</button>
-        </div></td>
-      </tr>`).join('')}
-      </tbody></table></div>`;
+  const t = $('#adhTable');
+  if (!list.length) { t.innerHTML = UI.emptyState('👤', 'Aucun adhérent trouvé.'); return; }
+  
+  t.innerHTML = `<div class="table-wrap"><table class="data">
+    <thead><tr>
+      <th width="40"><input type="checkbox" id="selectAllAdh" /></th>
+      <th>Matricule</th><th>Nom & Prénom</th><th>Téléphone</th><th>Wilaya</th><th>Type</th><th>Adhésion</th><th></th>
+    </tr></thead><tbody>
+    ${list.map((a) => `<tr>
+      <td><input type="checkbox" class="adh-checkbox" value="${a.id}" /></td>
+      <td>
+        <span class="mono" style="font-weight:bold; color:var(--gold); font-size: 13px;">
+          ${esc(a.matricule || '—')}
+        </span>
+      </td>
+      <td class="cell-strong">${esc(a.prenom)} ${esc(a.nom)}</td>
+      <td>${esc(a.telephone || '—')}</td>
+      <td>${esc(a.wilaya_nom)}</td>
+      <td>${UI.typeTag(a.type_libelle)}</td>
+      <td class="muted">${esc(fmtDate(a.date_adhesion))}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
+        <button class="btn btn-dark btn-sm" data-edit="${a.id}">✎</button>
+        <button class="btn btn-danger btn-sm" data-del="${a.id}">✕</button>
+      </div></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
 
-    t.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => adherentDetail(b.dataset.view));
-    t.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => {
-      adherentForm(await API.adherent(b.dataset.edit), adherentsList);
-    });
-    t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
-      confirm('Supprimer définitivement cet adhérent ?', async () => {
-        await API.deleteAdherent(b.dataset.del); toast('Adhérent supprimé.'); adherentsList();
-      });
-    });
+  // --- LOGIQUE DE SÉLECTION & SUPPRESSION GROUPÉE ---
+  const selectAll = $('#selectAllAdh');
+  const checkboxes = t.querySelectorAll('.adh-checkbox');
+  const bulkBtn = $('#bulkDeleteAdhBtn'); // Le bouton qui est dans ta toolbar
+  const countSpan = $('#bulkAdhCount');
+
+  function updateBulkBtn() {
+    const checkedCount = t.querySelectorAll('.adh-checkbox:checked').length;
+    countSpan.textContent = checkedCount;
+    bulkBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+    selectAll.checked = checkedCount === checkboxes.length && checkboxes.length > 0;
   }
 
+  selectAll.onchange = () => {
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateBulkBtn();
+  };
 
+  checkboxes.forEach(cb => cb.onchange = updateBulkBtn);
+
+  // Action du bouton de suppression groupée
+  bulkBtn.onclick = () => {
+    const ids = Array.from(t.querySelectorAll('.adh-checkbox:checked')).map(cb => cb.value);
+    confirm(`Supprimer définitivement les ${ids.length} adhérents sélectionnés ?`, async () => {
+      toast('Suppression en cours...', 'info');
+      // Assure-toi que API.deleteGroupedAdherents est bien défini dans ton fichier api.js
+      await API.deleteGroupedAdherents(ids); 
+      toast('Adhérents supprimés.');
+      adherentsList(); // Recharge la liste
+    });
+  };
+
+  // --- AUTRES ACTIONS ---
+  t.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => adherentDetail(b.dataset.view));
+  t.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => {
+    adherentForm(await API.adherent(b.dataset.edit), adherentsList);
+  });
+  t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+    confirm('Supprimer définitivement cet adhérent ?', async () => {
+      await API.deleteAdherent(b.dataset.del); toast('Adhérent supprimé.'); adherentsList();
+    });
+  });
+}
   /* ----- Formulaire adhérent ----- */
   function adherentForm(adh, onDone) {
     const isEdit = !!adh;
     const today = new Date().toISOString().slice(0, 10);
     const currTypeCode = adh?.type_code || 'AD';
     const currNiveau = adh?.niveau || 'Adhérent Simple';
-
 
     openModal(isEdit ? "Modifier l'adhérent" : 'Nouvel adhérent', `
       <form id="adhForm">
@@ -200,7 +557,6 @@ const Views = (() => {
         </div>
       </form>`, true);
 
-
     function updateDocHint() {
       const sel = $('#fDocType');
       const opt = sel.options[sel.selectedIndex];
@@ -218,7 +574,7 @@ const Views = (() => {
       try {
         const r = await API.previewMatricule(w, t, an);
         if (r && r.matricule) {
-          $('#matPreview').textContent = r.matricule + (isEdit ? '  (recalculé si modifié)' : '');
+          $('#matPreview').textContent = r.matricule + (isEdit ? '  (recalculé si modifié)' : '');
         }
       } catch {}
     }
@@ -234,7 +590,6 @@ const Views = (() => {
     updateDocHint();
     if (!isEdit) refreshMatricule();
 
-
     $('#adhCancel').onclick = closeModal;
     $('#adhForm').onsubmit = async (e) => {
       e.preventDefault();
@@ -248,7 +603,6 @@ const Views = (() => {
       } catch (err) { $('#adhFormErr').textContent = err.message; }
     };
   }
-
 
   /* ----- Détail adhérent ----- */
   async function adherentDetail(id) {
@@ -286,7 +640,6 @@ const Views = (() => {
         <button class="btn btn-gold" id="dClose">Fermer</button>
       </div>`, true);
 
-
     if (a.photo) API.fileUrl(a.photo).then((url) => { $('#detailPhoto').innerHTML = `<img src="${url}" class="profile-photo" />`; }).catch(() => {});
     $('#dClose').onclick = closeModal;
     $('#dDossier').onclick = () => downloadDossier(a.id);
@@ -294,11 +647,9 @@ const Views = (() => {
     $('#dEdit').onclick = () => adherentForm(a, () => { closeModal(); adherentsList(); });
   }
 
-
   function detailItem(lbl, val) {
     return `<div class="detail-item"><div class="d-lbl">${esc(lbl)}</div><div class="d-val">${esc(val)}</div></div>`;
   }
-
 
   function downloadDossier(id) {
     try {
@@ -307,7 +658,6 @@ const Views = (() => {
     } catch { toast('Impossible d\'ouvrir le dossier.', 'error'); }
   }
 
-
   function downloadCarte(id, matricule) {
     try {
       const win = window.open('/api/adherents/' + id + '/carte?token=' + API.getToken(), '_blank');
@@ -315,24 +665,24 @@ const Views = (() => {
     } catch { toast('Impossible d\'ouvrir la carte.', 'error'); }
   }
 
+/* ============ DEMANDES ============ */
 
-  /* ============ DEMANDES (déposées depuis le site web) ============ */
-  // Accès réservé : Président & Administrateur.
   async function demandesList() {
     const c = container();
     if (!['admin', 'president'].includes(ROLE)) {
-      c.innerHTML = UI.emptyState('🔒', 'Accès réservé au Président et à l’Administrateur.');
+      c.innerHTML = UI.emptyState('🔒', 'Accès réservé au Président et à l\'Administrateur.');
       return;
     }
     const types = (REF.typesDemande || []);
     c.innerHTML = `
-      <div class="toolbar">
+      <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
         <input type="search" id="demSearch" placeholder="Rechercher (objet, numéro, nom, matricule, email)…" />
         <select id="demStatut"><option value="">Tous statuts</option>${REF.statutsDemande.map((s) => `<option>${esc(s)}</option>`).join('')}</select>
         <select id="demPriorite"><option value="">Toutes priorités</option>${REF.priorites.map((p) => `<option>${esc(p)}</option>`).join('')}</select>
         <select id="demWilaya"><option value="">Toutes wilayas</option>${REF.wilayas.map((w) => `<option value="${w.code}">${w.code} — ${esc(w.nom)}</option>`).join('')}</select>
         <select id="demType"><option value="">Tous types</option>${types.map((t) => `<option>${esc(t)}</option>`).join('')}</select>
         <button class="btn btn-dark" id="refreshDemBtn" title="Rafraîchir">⟳ Rafraîchir</button>
+        <button class="btn btn-danger" id="bulkDeleteDemBtn" style="display: none;">✕ Supprimer la sélection (<span id="bulkCount">0</span>)</button>
       </div>
       <div id="demTable"><div class="muted">Chargement…</div></div>`;
 
@@ -344,7 +694,47 @@ const Views = (() => {
       const w = $('#demWilaya').value; if (w) params.wilaya = w;
       const t = $('#demType').value; if (t) params.type_demande = t;
       renderDemTable(await API.demandes(params));
+      updateBulkButton(); // Réinitialise le bouton après chargement
     }
+
+    // Gestion du bouton de suppression en masse
+    function updateBulkButton() {
+      const checkedBoxes = document.querySelectorAll('.dem-checkbox:checked');
+      const bulkBtn = $('#bulkDeleteDemBtn');
+      const bulkCount = $('#bulkCount');
+      
+      if (checkedBoxes.length > 0) {
+        bulkCount.textContent = checkedBoxes.length;
+        bulkBtn.style.display = 'inline-block';
+      } else {
+        bulkBtn.style.display = 'none';
+      }
+    }
+
+    // Clic sur le bouton de suppression en masse
+    $('#bulkDeleteDemBtn').onclick = () => {
+      const checkedBoxes = document.querySelectorAll('.dem-checkbox:checked');
+      const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
+
+      confirm(`Supprimer ces ${idsToDelete.length} demandes définitivement ?`, async () => {
+        try {
+          // Boucle asynchrone pour tout supprimer
+          await Promise.all(idsToDelete.map(id => API.deleteDemande(id)));
+          toast(`${idsToDelete.length} demandes supprimées avec succès.`);
+          load();
+        } catch (err) {
+          toast('Erreur lors de la suppression groupée : ' + err.message, 'error');
+        }
+      });
+    };
+
+    // Exposer updateBulkButton globalement ou l'attacher aux événements dans renderDemTable
+    c.addEventListener('change', (e) => {
+      if (e.target.classList.contains('dem-checkbox') || e.target.id === 'selectAllDem') {
+        updateBulkButton();
+      }
+    });
+
     let timer;
     $('#demSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(load, 280); };
     $('#demStatut').onchange = load;
@@ -355,17 +745,24 @@ const Views = (() => {
     load();
   }
 
-
-function renderDemTable(list) {
+  function renderDemTable(list) {
     const t = $('#demTable');
     if (!list.length) { t.innerHTML = UI.emptyState('📨', 'Aucune demande.'); return; }
+    
     t.innerHTML = `<div class="table-wrap"><table class="data">
       <thead><tr>
+        <th width="40"><input type="checkbox" id="selectAllDem" /></th>
         <th>Numéro</th><th>Nom</th><th>Prénom</th><th>Wilaya</th>
         <th>Date & Heure de création</th><th>Statut</th><th></th>
       </tr></thead><tbody>
       ${list.map((d) => `<tr>
-        <td><span class="mono">${esc(d.numero)}</span></td>
+        <td><input type="checkbox" class="dem-checkbox" value="${d.id}" /></td>
+        
+        <td>
+        <span class="mono" style="font-weight:bold; color:var(--gold); font-size: 13px;">
+          ${esc(d.numero || '—')}
+        </span>
+      </td>
         <td class="cell-strong">${esc(d.nom)}</td>
         <td>${esc(d.prenom)}</td>
         <td>${esc(d.wilaya_nom || d.wilaya_code || '—')}</td>
@@ -378,6 +775,14 @@ function renderDemTable(list) {
       </tr>`).join('')}
       </tbody></table></div>`;
 
+    // Logique Tout Sélectionner / Tout Désélectionner
+    const selectAll = $('#selectAllDem');
+    const checkboxes = t.querySelectorAll('.dem-checkbox');
+
+    selectAll.onchange = () => {
+      checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    };
+
     t.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => demandeDetail(b.dataset.view));
     t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
       confirm('Supprimer cette demande ?', async () => {
@@ -385,8 +790,7 @@ function renderDemTable(list) {
       });
     });
   }
-
-
+  /* ----- Détail Demande ----- */
   async function demandeDetail(id) {
     const d = await API.demande(id);
     const piecesHtml = d.pieces && d.pieces.length
@@ -395,7 +799,6 @@ function renderDemTable(list) {
 
     openModal('Demande ' + d.numero, `
       <div class="detail-grid" style="margin-bottom:18px">
-        ${detailItem('Numéro', d.numero)}
         ${detailItem('Nom', d.nom)}
         ${detailItem('Prénom', d.prenom)}
         ${detailItem('Wilaya', d.wilaya_nom || d.wilaya_code || '—')}
@@ -411,15 +814,12 @@ function renderDemTable(list) {
       <div class="detail-item" style="margin-top:12px"><div class="d-lbl">Description</div>
         <div class="d-val" style="line-height:1.6">${esc(d.description || '—')}</div></div>
       <div style="margin-top:14px"><div class="d-lbl" style="margin-bottom:8px">Pièces jointes</div>${piecesHtml}</div>
-      ${d.reponse ? `<div class="panel" style="margin-top:16px;background:rgba(76,175,114,0.08)">
-        <div class="d-lbl">Réponse</div><div class="d-val" style="margin-top:6px">${esc(d.reponse)}</div></div>` : ''}
+      
       <div class="panel" style="margin-top:18px">
         <div class="panel-head"><h3>Traitement</h3></div>
         <div class="form-grid">
           <div class="field"><label>Statut</label><select id="dStatut">${REF.statutsDemande.map((s) => `<option ${s === d.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
           <div class="field"><label>Priorité</label><select id="dPriorite">${REF.priorites.map((p) => `<option ${p === d.priorite ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
-          <div class="field full"><label>Affecter à</label><input id="dAffecte" value="${esc(d.affecte_a || '')}" placeholder="Service / responsable" /></div>
-          <div class="field full"><label>Réponse</label><textarea id="dReponse" placeholder="Réponse au demandeur…">${esc(d.reponse || '')}</textarea></div>
         </div>
         <div style="text-align:right;margin-top:10px"><button class="btn btn-gold" id="demSave">Enregistrer le traitement</button></div>
       </div>
@@ -431,77 +831,214 @@ function renderDemTable(list) {
     document.querySelectorAll('[data-file]').forEach((b) => b.onclick = async () => {
       try { window.open(await API.fileUrl(b.dataset.file), '_blank'); } catch { toast('Fichier indisponible.', 'error'); }
     });
+    
     $('#demClose').onclick = closeModal;
-    if ($('#demCloturer')) $('#demCloturer').onclick = async () => {
-      await API.cloturerDemande(d.id); toast('Demande clôturée.'); closeModal(); demandesList();
-    };
-    $('#demSave').onclick = async () => {
-      await API.updateDemande(d.id, {
-        statut: $('#dStatut').value, priorite: $('#dPriorite').value,
-        affecte_a: $('#dAffecte').value, reponse: $('#dReponse').value,
-      });
-      toast('Demande mise à jour.'); closeModal(); demandesList();
-    };
-  }
-
-
-  /* ============ DOCUMENTS ============ */
-  async function documentsList() {
-    const c = container();
-    c.innerHTML = `
-      <div class="toolbar">
-        <h3 style="flex:1;color:var(--text)">Gestion documentaire</h3>
-        <button class="btn btn-gold" id="addDocBtn">+ Ajouter un document</button>
-      </div>
-      <div id="docTable"><div class="muted">Chargement…</div></div>`;
-    async function load() {
-      const [docs, adhs] = await Promise.all([API.documents(), API.adherents()]);
-      const adhMap = {}; adhs.forEach((a) => adhMap[a.id] = `${a.prenom} ${a.nom} (${a.matricule})`);
-      const t = $('#docTable');
-      if (!docs.length) { t.innerHTML = UI.emptyState('📁', 'Aucun document.'); return; }
-      t.innerHTML = `<div class="table-wrap"><table class="data">
-        <thead><tr><th>Titre</th><th>Fichier</th><th>Adhérent associé</th><th>Ajouté le</th><th></th></tr></thead>
-        <tbody>${docs.map((d) => `<tr>
-          <td class="cell-strong">${esc(d.titre)}</td>
-          <td class="muted">${esc(d.original_name || '')}</td>
-          <td>${d.adherent_id ? esc(adhMap[d.adherent_id] || '#' + d.adherent_id) : '<span class="muted">— Général —</span>'}</td>
-          <td class="muted">${esc((d.created_at || '').slice(0, 10))}</td>
-          <td><div class="row-actions">
-            <button class="btn btn-dark btn-sm" data-file="${esc(d.filename)}">Ouvrir</button>
-            <button class="btn btn-danger btn-sm" data-del="${d.id}">✕</button>
-          </div></td>
-        </tr>`).join('')}</tbody></table></div>`;
-      t.querySelectorAll('[data-file]').forEach((b) => b.onclick = async () => {
-        try { window.open(await API.fileUrl(b.dataset.file), '_blank'); } catch { toast('Indisponible.', 'error'); }
-      });
-      t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => confirm('Supprimer ce document ?', async () => {
-        await API.deleteDocument(b.dataset.del); toast('Document supprimé.'); load();
-      }));
-    }
-    $('#addDocBtn').onclick = async () => {
-      const adhs = await API.adherents();
-      openModal('Ajouter un document', `
-        <form id="docForm">
-          <div class="field"><label>Titre</label><input name="titre" placeholder="Nom du document" /></div>
-          <div class="field"><label>Associer à un adhérent (optionnel)</label>
-            <select name="adherent_id"><option value="">— Document général —</option>
-              ${adhs.map((a) => `<option value="${a.id}">${esc(a.prenom)} ${esc(a.nom)} — ${esc(a.matricule)}</option>`).join('')}</select></div>
-          <div class="field"><label>Fichier *</label><input type="file" name="fichier" required /></div>
-          <div class="form-error" id="docErr"></div>
-          <div class="modal-foot"><button type="button" class="btn btn-ghost" id="docCancel">Annuler</button>
-          <button type="submit" class="btn btn-gold">Téléverser</button></div>
-        </form>`);
-      $('#docCancel').onclick = closeModal;
-      $('#docForm').onsubmit = async (e) => {
-        e.preventDefault();
-        try { await API.createDocument(new FormData(e.target)); toast('Document ajouté.'); closeModal(); load(); }
-        catch (err) { $('#docErr').textContent = err.message; }
+    
+    if ($('#demCloturer')) {
+      $('#demCloturer').onclick = async () => {
+        await API.cloturerDemande(d.id); 
+        toast('Demande clôturée.'); 
+        closeModal(); 
+        demandesList();
       };
+    }
+
+    $('#demSave').onclick = async () => {
+      try {
+        await API.updateDemande(d.id, {
+          statut: $('#dStatut').value, 
+          priorite: $('#dPriorite').value
+        });
+        toast('Demande mise à jour avec succès.'); 
+        closeModal(); 
+        demandesList();
+      } catch (err) {
+        toast('Erreur lors de la mise à jour : ' + err.message, 'error');
+      }
     };
-    load();
   }
 
+/* ============ GESTION DOCUMENTAIRE (SUPPRESSION PAR ADHERENT_ID) ============ */
+async function documentsList() {
+  const c = container();
+  c.innerHTML = `
+    <div class="toolbar" style="flex-wrap: wrap; gap: 10px; align-items: center;">
+      <input type="search" id="docSearch" placeholder="Rechercher (nom, prénom, matricule)…" />
+      <select id="docWilaya">
+        <option value="">Toutes wilayas</option>
+        ${REF.wilayas.map((w) => `<option value="${w.code}">${w.code} — ${esc(w.nom)}</option>`).join('')}
+      </select>
+      <button class="btn btn-dark" id="refreshDocsBtn" title="Rafraîchir">⟳</button>
+      
+      <button class="btn btn-danger" id="deleteBulkBtn" style="display: none; margin-left: auto;">
+        ✕ Supprimer la sélection (<span id="selectedCount">0</span>)
+      </button>
+    </div>
+    <div id="docTable"><div class="muted">Chargement de la liste des adhérents…</div></div>`;
 
+  let currentFilteredList = [];
+
+  async function load() {
+    try {
+      const liste = await API.adherentsStatut();
+      renderDocTable(liste);
+    } catch (err) {
+      $('#docTable').innerHTML = `<div class="error">Erreur : ${err.message}</div>`;
+    }
+  }
+
+  function renderDocTable(liste) {
+    const t = $('#docTable');
+    if (!liste.length) { t.innerHTML = UI.emptyState('👥', 'Aucun adhérent trouvé.'); return; }
+
+    const searchQuery = $('#docSearch').value.toLowerCase().trim();
+    const selectedWilaya = $('#docWilaya').value;
+
+    currentFilteredList = liste.filter(a => {
+      const matchSearch = `${a.matricule || ''} ${a.nom || ''} ${a.prenom || ''}`.toLowerCase().includes(searchQuery);
+      const matchWilaya = !selectedWilaya || a.wilaya_code === selectedWilaya;
+      return matchSearch && matchWilaya;
+    });
+
+    t.innerHTML = `
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th width="40" style="text-align:center;">
+                <input type="checkbox" id="selectAllDocs" />
+              </th>
+              <th>Matricule</th>
+              <th>Nom & Prénom</th>
+              <th>Dernière fusion</th>
+              <th width="200" style="text-align:right;">Fichier complet</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${currentFilteredList.map((a) => {
+              const hasFile = !!a.filename;
+              const dateAffichage = a.updated_at ? esc(a.updated_at.slice(0, 10)) : '—';
+              
+              return `
+                <tr>
+                  <td style="text-align:center;">
+                    <input type="checkbox" class="doc-checkbox" value="${a.adherent_id}" ${!hasFile ? 'disabled style="opacity:0.3;"' : ''} />
+                  </td>
+                  <td><span class="mono" style="font-weight:bold; color:var(--gold);">${esc(a.matricule || '—')}</span></td>
+                  <td class="cell-strong">${esc(a.prenom)} ${esc(a.nom)}</td>
+                  <td class="muted">${hasFile ? dateAffichage : '—'}</td>
+                  <td>
+                    <div class="row-actions" style="justify-content: flex-end; gap:8px;">
+                      <input type="file" id="fileInput-${a.adherent_id}" style="display:none;" accept=".pdf" multiple />
+                      
+                      <button class="btn btn-dark btn-sm" onclick="document.getElementById('fileInput-${a.adherent_id}').click()">
+                        📎 Fusionner
+                      </button>
+                      
+                      <button class="btn btn-gold btn-sm" data-file="${esc(a.filename || '')}" ${!hasFile ? 'disabled style="opacity:0.5;"' : ''}>
+                        👁 Ouvrir
+                      </button>
+                    </div>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    const selectAllCheckbox = $('#selectAllDocs');
+    const checkboxes = t.querySelectorAll('.doc-checkbox:not([disabled])');
+    const bulkBtn = $('#deleteBulkBtn');
+    const countSpan = $('#selectedCount');
+
+    function updateBulkButtonVisibility() {
+      const checkedBoxes = t.querySelectorAll('.doc-checkbox:checked');
+      countSpan.textContent = checkedBoxes.length;
+      bulkBtn.style.display = checkedBoxes.length > 0 ? 'inline-block' : 'none';
+    }
+
+    if (selectAllCheckbox) {
+      selectAllCheckbox.onchange = () => {
+        checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+        updateBulkButtonVisibility();
+      };
+    }
+
+    checkboxes.forEach(cb => {
+      cb.onchange = () => {
+        const allChecked = t.querySelectorAll('.doc-checkbox:not([disabled]):checked').length === checkboxes.length;
+        if (selectAllCheckbox) selectAllCheckbox.checked = allChecked;
+        updateBulkButtonVisibility();
+      };
+    });
+
+    // --- EVENEMENT : SUPPRESSION GROUPÉE SIMPLIFIÉE & SÉCURISÉE ---
+    bulkBtn.onclick = () => {
+      const checkedBoxes = t.querySelectorAll('.doc-checkbox:checked');
+      const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
+      
+      if (!idsToDelete.length) return;
+
+      confirm(`Détacher et supprimer définitivement les fichiers fusionnés pour ces ${idsToDelete.length} adhérent(s) ?`, async () => {
+        try {
+          toast('Suppression en cours...', 'info');
+          
+          // L'appel à l'API va lever une exception automatiquement si le serveur renvoie un code 500 ou 400
+          await API.deleteGroupedDocuments(idsToDelete);
+          
+          // Si on arrive ici, c'est que la requête s'est déroulée sans erreur (Statut 200/204)
+          toast('Dossiers supprimés avec succès.');
+          load(); // Recharge le tableau immédiatement
+          
+        } catch (err) {
+          // Affiche l'erreur réelle renvoyée par Express si ça échoue
+          toast(`Échec de la suppression : ${err.message}`, 'error');
+        }
+      });
+    };
+
+    // --- EVENEMENT : FUSION ---
+    currentFilteredList.forEach(a => {
+      const input = document.getElementById(`fileInput-${a.adherent_id}`);
+      if (input) {
+        input.onchange = async () => {
+          if (!input.files.length) return;
+          const formData = new FormData();
+          for (let i = 0; i < input.files.length; i++) {
+            formData.append('fichiers', input.files[i]);
+          }
+          toast(`Fusion en cours...`, 'info');
+          try {
+            await API.fusionnerDossier(a.adherent_id, formData);
+            toast('Documents fusionnés avec succès !');
+            load();
+          } catch (err) {
+            toast(err.message, 'error');
+          }
+        };
+      }
+    });
+
+    // --- EVENEMENT : OUVRIR ---
+    t.querySelectorAll('[data-file]').forEach((b) => b.onclick = async () => {
+      const relPath = b.dataset.file;
+      if (!relPath) return;
+      try { 
+        const cleanPath = relPath.replace(/^uploads\//, '');
+        window.open(await API.fileUrl(cleanPath), '_blank'); 
+      } catch { 
+        toast('Fichier introuvable.', 'error'); 
+      }
+    });
+  }
+
+  let timer;
+  $('#docSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(load, 280); };
+  $('#docWilaya').onchange = load;
+  $('#refreshDocsBtn').onclick = () => { load(); toast('Liste actualisée.'); };
+
+  load();
+}
   /* ============ PARAMÈTRES ============ */
   function parametres() {
     const c = container();
@@ -565,8 +1102,7 @@ function renderDemTable(list) {
     loadBackups();
   }
 
-
-  /* ============ AGENT DE SAISIE : ajout d'adhérent uniquement ============ */
+  /* ============ AGENT DE SAISIE ============ */
   function saisieAjout() {
     const c = container();
     c.innerHTML = `
@@ -583,8 +1119,7 @@ function renderDemTable(list) {
     });
   }
 
-
-  /* ============ COMPTES UTILISATEURS (admin & président) ============ */
+  /* ============ COMPTES UTILISATEURS ============ */
   async function comptesList() {
     const c = container();
     c.innerHTML = `
@@ -598,9 +1133,6 @@ function renderDemTable(list) {
       const users = await API.users();
       const t = $('#usersTable');
       const roleLabel = { admin: 'Administrateur', president: 'Président', saisie: 'Agent de saisie' };
-      // Protection : le compte Président est INTOUCHABLE depuis cet écran.
-      // Aucun bouton n'est rendu pour le Président — ni mot de passe,
-      // ni suppression, ni changement de rôle.
       t.innerHTML = `<div class="table-wrap"><table class="data">
         <thead><tr><th>Email</th><th>Rôle</th><th>Créé le</th><th></th></tr></thead>
         <tbody>${users.map((u) => {
@@ -640,7 +1172,6 @@ function renderDemTable(list) {
       });
     }
     $('#addUserBtn').onclick = () => {
-      // Seul le Président peut créer un nouveau compte « Président ».
       const presidentOption = (ROLE === 'president')
         ? `<option value="president">Président (accès complet)</option>` : '';
       openModal('Nouveau compte', `
