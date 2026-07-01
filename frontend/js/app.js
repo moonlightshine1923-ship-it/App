@@ -1,25 +1,52 @@
 // ===== Contrôleur principal =====
 (() => {
   const { $, $$, esc } = UI;
-  let CURRENT = null; // { user }
+  let CURRENT = null;
 
-  const ROLE_LABEL = { admin: 'Administrateur', president: 'Président', saisie: 'Agent de saisie' };
+  const ROLE_LABEL = { admin: 'Administrateur', president: 'Président', saisie: 'Compte personnalisé' };
 
-  // Menu complet (admin & président : mêmes fonctionnalités)
   const MENU_FULL = [
     { id: 'dashboard', label: 'Tableau de bord', icon: '📊', title: 'Tableau de bord', render: () => Views.dashboard() },
     { id: 'adherents', label: 'Adhérents', icon: '👥', title: 'Gestion des adhérents', render: () => Views.adherentsList() },
+    { id: 'bureau-executif', label: 'Bureau exécutif', icon: '🏛️', title: 'Bureau exécutif', render: () => Views.bureauExecutifList() },
     { id: 'demandes', label: 'Demandes', icon: '📨', title: 'Demandes (site web)', render: () => Views.demandesList() },
     { id: 'documents', label: 'Documents', icon: '📁', title: 'Gestion documentaire', render: () => Views.documentsList() },
     { id: 'comptes', label: 'Comptes', icon: '🔑', title: 'Comptes utilisateurs', render: () => Views.comptesList() },
     { id: 'parametres', label: 'Paramètres', icon: '⚙️', title: 'Paramètres', render: () => Views.parametres() },
   ];
 
-  // Menu restreint pour l'agent de saisie : uniquement ajouter un adhérent
-  const MENU_SAISIE = [
-    { id: 'ajout', label: 'Ajouter un adhérent', icon: '➕', title: 'Ajouter un adhérent', render: () => Views.saisieAjout() },
-    { id: 'parametres', label: 'Paramètres', icon: '⚙️', title: 'Paramètres', render: () => Views.parametres() },
-  ];
+  function buildLimitedMenu(perms = []) {
+    const menu = [];
+    if (perms.includes('adherents_manage')) {
+      menu.push({ id: 'adherents', label: 'Adhérents', icon: '👥', title: 'Gestion des adhérents', render: () => Views.adherentsList() });
+    } else if (perms.includes('adherents_add')) {
+      menu.push({ id: 'ajout', label: 'Ajouter un adhérent', icon: '➕', title: 'Ajouter un adhérent', render: () => Views.saisieAjout() });
+    }
+    if (perms.includes('demandes_view') || perms.includes('demandes_edit')) {
+      menu.push({ id: 'demandes', label: 'Demandes', icon: '📨', title: 'Demandes (site web)', render: () => Views.demandesList() });
+    }
+    if (perms.includes('documents_view')) {
+      menu.push({ id: 'documents', label: 'Documents', icon: '📁', title: 'Gestion documentaire', render: () => Views.documentsList() });
+    }
+    if (!menu.length) {
+      menu.push({ id: 'ajout', label: 'Accueil', icon: '🔒', title: 'Accès', render: () => Views.parametres() });
+    }
+    return menu;
+  }
+
+  async function maybeAutoMonthlyBackup(user) {
+    if (!['admin', 'president'].includes(user.role)) return;
+    const key = `opa_auto_backup_${new Date().toISOString().slice(0, 7)}`;
+    if (localStorage.getItem(key)) return;
+    try {
+      const r = await API.backup();
+      await API.downloadBackup(r.file);
+      localStorage.setItem(key, '1');
+      UI.toast('Sauvegarde mensuelle automatique téléchargée.', 'info');
+    } catch (err) {
+      console.warn('Sauvegarde mensuelle auto non effectuée :', err.message);
+    }
+  }
 
   let MENU = MENU_FULL;
 
@@ -47,13 +74,15 @@
   async function enterApp(session) {
     CURRENT = session;
     const role = session.user.role;
+    const permissions = Array.isArray(session.user.permissions) ? session.user.permissions : [];
     const ref = await API.reference();
     Views.setRef(ref);
     Views.setRole(role);
+    Views.setPermissions(permissions);
 
-    MENU = (role === 'saisie') ? MENU_SAISIE : MENU_FULL;
+    MENU = (role === 'admin' || role === 'president') ? MENU_FULL : buildLimitedMenu(permissions);
 
-    const name = role === 'admin' ? 'Administrateur OPA' : (role === 'president' ? 'Président OPA' : 'Agent de saisie');
+    const name = role === 'admin' ? 'Administrateur OPA' : (role === 'president' ? 'Président OPA' : 'Utilisateur autorisé');
     $('#userName').textContent = name;
     $('#userRole').textContent = ROLE_LABEL[role] || role;
     $('#userAvatar').textContent = (name[0] || 'U').toUpperCase();
@@ -62,6 +91,7 @@
     buildNav();
     $('#loginScreen').classList.add('hidden');
     $('#app').classList.remove('hidden');
+    await maybeAutoMonthlyBackup(session.user);
     navigate(MENU[0].id);
   }
 
@@ -84,7 +114,6 @@
     }
   };
 
-  // Afficher / masquer le mot de passe
   const togglePwd = $('#togglePassword');
   if (togglePwd) togglePwd.onclick = () => {
     const input = $('#loginPassword');

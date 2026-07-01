@@ -8,7 +8,7 @@ import { uploadDoc } from '../middleware/upload.js';
 
 const router = express.Router();
 
-router.get('/adherents-statut', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.get('/adherents-statut', authenticate, authorize('admin', 'president', 'perm:documents_view'), async (req, res) => {
   try {
     const sql = `
       SELECT 

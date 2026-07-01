@@ -7,18 +7,67 @@ const router = express.Router();
 
 router.get('/', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
-    const totalAdherents = (await get('SELECT COUNT(*) AS c FROM adherents')).c;
+    const totalAdherents = (await get("SELECT COUNT(*) AS c FROM adherents WHERE type_code <> 'BE' OR type_code IS NULL")).c;
+    const totalBureauExecutif = (await get("SELECT COUNT(*) AS c FROM adherents WHERE type_code = 'BE'"))?.c || 0;
 
-    const parType = await query('SELECT type_code, COUNT(*) AS c FROM adherents GROUP BY type_code');
+    const parType = await query("SELECT type_code, COUNT(*) AS c FROM adherents WHERE type_code <> 'BE' OR type_code IS NULL GROUP BY type_code");
     const typeCount = (code) => (parType.find((x) => x.type_code === code)?.c) || 0;
 
-    const gold = (await get("SELECT COUNT(*) AS c FROM adherents WHERE niveau = 'Adhérent Gold'")).c;
+    const gold = (await get("SELECT COUNT(*) AS c FROM adherents WHERE (type_code <> 'BE' OR type_code IS NULL) AND niveau = 'Adhérent Gold'"))?.c || 0;
 
-    const parWilayaRaw = await query('SELECT wilaya_code, COUNT(*) AS c FROM adherents GROUP BY wilaya_code ORDER BY c DESC');
+    const parWilayaRaw = await query("SELECT wilaya_code, COUNT(*) AS c FROM adherents WHERE type_code <> 'BE' OR type_code IS NULL GROUP BY wilaya_code ORDER BY c DESC");
     const parWilaya = parWilayaRaw.map((r) => ({ code: r.wilaya_code, nom: wilayaNom(r.wilaya_code), count: r.c }));
 
     const mois = new Date().toISOString().slice(0, 7);
-    const nouveauxMois = (await get("SELECT COUNT(*) AS c FROM adherents WHERE DATE_FORMAT(date_adhesion, '%Y-%m') = ?", [mois])).c;
+    const nouveauxMois = (await get("SELECT COUNT(*) AS c FROM adherents WHERE (type_code <> 'BE' OR type_code IS NULL) AND DATE_FORMAT(date_adhesion, '%Y-%m') = ?", [mois]))?.c || 0;
+
+    const starRows = await query("SELECT id, nom, prenom, matricule, etoiles FROM adherents WHERE type_code <> 'BE' OR type_code IS NULL ORDER BY etoiles ASC, prenom ASC, nom ASC");
+    const starGroups = { 0: [], 1: [], 2: [], 3: [] };
+    for (const row of starRows) {
+      const s = Math.max(0, Math.min(3, Number.parseInt(row.etoiles, 10) || 0));
+      starGroups[s].push(row);
+    }
+
+    const expiringRows = await query("SELECT id, nom, prenom, matricule, date_adhesion FROM adherents WHERE (type_code <> 'BE' OR type_code IS NULL) AND date_adhesion IS NOT NULL");
+    const today = new Date();
+    const currentMonth = today.toISOString().slice(0, 7);
+    const currentYear = String(today.getFullYear());
+    const rankingRows = await query("SELECT id, nom, prenom, matricule, etoiles, top_month_rank, top_year_rank, date_adhesion FROM adherents WHERE (type_code <> 'BE' OR type_code IS NULL)");
+    const sortRanked = (rows, rankField) => rows.sort((a, b) => {
+      const ar = a[rankField] ?? Number.MAX_SAFE_INTEGER;
+      const br = b[rankField] ?? Number.MAX_SAFE_INTEGER;
+      if (ar !== br) return ar - br;
+      const ae = Number.parseInt(a.etoiles, 10) || 0;
+      const be = Number.parseInt(b.etoiles, 10) || 0;
+      if (be !== ae) return be - ae;
+      return String(a.prenom || '').localeCompare(String(b.prenom || ''));
+    }).slice(0, 10);
+    const meilleursMois = sortRanked(rankingRows.filter((r) => String(r.date_adhesion || '').slice(0, 7) === currentMonth), 'top_month_rank');
+    const meilleursAnnee = sortRanked(rankingRows.filter((r) => String(r.date_adhesion || '').slice(0, 4) === currentYear), 'top_year_rank');
+
+    const adhesionsBientotExpirantes = expiringRows
+      .map((row) => {
+        const base = new Date(`${String(row.date_adhesion).slice(0, 10)}T00:00:00`);
+        if (isNaN(base)) return null;
+        base.setFullYear(base.getFullYear() + 1);
+        const target = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+        const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const daysLeft = Math.round((target - now) / (24 * 60 * 60 * 1000));
+        if (daysLeft < 0 || daysLeft > 30) return null;
+        const y = target.getFullYear();
+        const m = String(target.getMonth() + 1).padStart(2, '0');
+        const d = String(target.getDate()).padStart(2, '0');
+        return {
+          id: row.id,
+          nom: row.nom,
+          prenom: row.prenom,
+          matricule: row.matricule,
+          date_expiration: `${y}-${m}-${d}`,
+          daysLeft,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.daysLeft - b.daysLeft || String(a.prenom || '').localeCompare(String(b.prenom || '')));
 
     const demandesParStatut = await query('SELECT statut, COUNT(*) AS c FROM demandes_site GROUP BY statut');
     const totalDemandes = (await get('SELECT COUNT(*) AS c FROM demandes_site')).c;
@@ -29,8 +78,9 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
 
     res.json({
       totalAdherents,
+      totalBureauExecutif,
       adherents: { AD: typeCount('AD'), MA: typeCount('MA'), CR: typeCount('CR'), gold },
-      parWilaya, nouveauxMois,
+      parWilaya, nouveauxMois, starGroups, adhesionsBientotExpirantes, meilleursMois, meilleursAnnee,
       demandes: { total: totalDemandes, ouvertes: demandesOuvertes, cloturees: demandesCloturees, tauxTraitement, parStatut: demandesParStatut },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

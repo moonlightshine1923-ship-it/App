@@ -30,6 +30,15 @@ CREATE TABLE IF NOT EXISTS `adherents` (
   `num_ordre` int(11) DEFAULT 0,
   `annee` int(11) DEFAULT 0,
   `date_adhesion` date DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `fichier_final` varchar(255) DEFAULT NULL,
+  `dossier_pdf` varchar(255) DEFAULT NULL,
+  `paiement_mode` varchar(20) DEFAULT NULL,
+  `paiement_banque` varchar(150) DEFAULT NULL,
+  `paiement_ref` varchar(100) DEFAULT NULL,
+  `bureau_code` varchar(3) DEFAULT NULL,
+  `bureau_badge_type` varchar(100) DEFAULT NULL,
+  `etoiles` tinyint(4) DEFAULT 0,
   `created_at` datetime DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `matricule` (`matricule`),
@@ -45,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `adherents` (
 SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
 LOCK TABLES `adherents` WRITE;
 /*!40000 ALTER TABLE `adherents` DISABLE KEYS */;
-INSERT INTO `adherents` VALUES
+INSERT INTO `adherents` (`id`,`matricule`,`nom`,`prenom`,`nom_ar`,`prenom_ar`,`telephone`,`nin`,`doc_type`,`doc_numero`,`photo`,`wilaya_code`,`type_code`,`niveau`,`num_ordre`,`annee`,`date_adhesion`,`created_at`) VALUES
 (1,'AGN19-09-001-MA-2026','Saadi','Yacine','سعدي','ياسين','0579192654','103986974295345075','AG','57941801681631',NULL,'09','MA','Membre Actif',1,2026,'2026-06-17','2026-06-04 11:19:37'),
 (2,'AGN19-31-001-AD-2026','Boudiaf','Sara','بوضياف','سارة','0578662698','104828352760952836','CA','79078474120',NULL,'31','AD','Adhérent Gold',1,2026,'2026-01-24','2026-06-04 11:19:37'),
 (3,'AGN19-23-001-CR-2026','Rahmani','Sara','رحماني','سارة','0584793818','154520760526780470','RC','343522784595',NULL,'23','CR','Conseiller',1,2026,'2026-12-20','2026-06-04 11:19:37'),

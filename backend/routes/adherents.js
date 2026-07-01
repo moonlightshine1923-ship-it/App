@@ -44,24 +44,95 @@ function enrich(a) {
   };
 }
 
+function normalizePaiementMode(mode) {
+  const m = String(mode || '').trim().toLowerCase();
+  if (['cheque', 'chèque'].includes(m)) return 'cheque';
+  if (['espece', 'espèce', 'especes', 'espèces'].includes(m)) return 'espece';
+  if (m === 'virement') return 'virement';
+  return '';
+}
+
+function normalizePaiementData(b = {}) {
+  const paiement_mode = normalizePaiementMode(b.paiement_mode);
+  const paiement_ref = b.paiement_ref !== undefined && b.paiement_ref !== null && String(b.paiement_ref).trim() !== ''
+    ? String(b.paiement_ref).trim()
+    : null;
+  const paiement_banque = b.paiement_banque !== undefined && b.paiement_banque !== null && String(b.paiement_banque).trim() !== ''
+    ? String(b.paiement_banque).trim()
+    : null;
+
+  if (paiement_mode === 'espece' || !paiement_mode) {
+    return { paiement_mode: paiement_mode || null, paiement_ref: null, paiement_banque: null };
+  }
+
+  return { paiement_mode, paiement_ref, paiement_banque };
+}
+
+function opt(v, fallback = null) {
+  if (v === undefined || v === null) return fallback;
+  const s = String(v).trim();
+  return s === '' ? fallback : s;
+}
+
+function text(v) {
+  return String(v || '').trim();
+}
+
+function normalizeTypeCode(v) {
+  const t = String(v || 'AD').trim();
+  if (t === 'AD_simple' || t === 'AD_gold') return 'AD';
+  return t || 'AD';
+}
+
+function normalizeNiveau(type_code, niveau, badgeType) {
+  const n = text(niveau);
+  const t = normalizeTypeCode(type_code);
+  if (t === 'BE') return 'Bureau exécutif';
+  if (t === 'MA') return 'Membre Actif';
+  if (t === 'CR') return 'Conseiller';
+  if (n.toLowerCase().includes('gold')) return 'Adhérent Gold';
+  return n || 'Adhérent Simple';
+}
+
+function normalizeBureauCode(v) {
+  return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3) || null;
+}
+
+function normalizeEtoiles(v) {
+  const n = Number.parseInt(v, 10);
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(3, n));
+}
+
+function normalizeCarteRemise(v) {
+  if (v === true || v === 1 || v === '1' || v == 'on' || v === 'true') return 1;
+  return 0;
+}
+
 function validate(b, { partial = false } = {}) {
   const errors = [];
   const req = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+  const type_code = normalizeTypeCode(b.type_code);
+  const paiement = normalizePaiementData(b);
+  const bureau_code = normalizeBureauCode(b.bureau_code);
+  const bureau_badge_type = opt(b.bureau_badge_type);
+  const etoiles = normalizeEtoiles(b.etoiles);
 
-  if (!partial || b.nom !== undefined) if (!req(b.nom)) errors.push('Le nom est obligatoire.');
-  if (!partial || b.prenom !== undefined) if (!req(b.prenom)) errors.push('Le prénom est obligatoire.');
-  if (!partial || b.nom_ar !== undefined) if (!req(b.nom_ar)) errors.push('Le nom en arabe est obligatoire.');
-  if (!partial || b.prenom_ar !== undefined) if (!req(b.prenom_ar)) errors.push('Le prénom en arabe est obligatoire.');
+  if (type_code === 'BE') {
+    if (!bureau_code || bureau_code.length !== 3) errors.push('Le code Bureau exécutif doit contenir exactement 3 caractères.');
+    if (!req(bureau_badge_type)) errors.push('Le type affiché sur le badge du Bureau exécutif est obligatoire.');
+  }
 
-  if (!partial || b.telephone !== undefined) {
-    if (!req(b.telephone)) errors.push('Le téléphone est obligatoire.');
+  if (paiement.paiement_mode === 'cheque') {
+    if (!req(paiement.paiement_ref)) errors.push('Le numéro de chèque est obligatoire.');
+    else if (!/^\d{7}$/.test(String(paiement.paiement_ref))) errors.push('Le numéro de chèque doit contenir exactement 7 chiffres.');
+    if (!req(paiement.paiement_banque)) errors.push('La banque du chèque est obligatoire.');
   }
-  if (!partial || b.nin !== undefined) {
-    if (!req(b.nin)) errors.push('Le NIN est obligatoire.');
+  if (paiement.paiement_mode === 'virement') {
+    if (!req(paiement.paiement_banque)) errors.push("L'information du virement est obligatoire.");
   }
-  if (!partial || b.wilaya_code !== undefined) if (!req(b.wilaya_code)) errors.push('La wilaya est obligatoire.');
-  if (!partial || b.type_code !== undefined) if (!req(b.type_code)) errors.push("Le type d'adhérent est obligatoire.");
-  if (!partial || b.date_adhesion !== undefined) if (!req(b.date_adhesion)) errors.push("La date d'adhésion est obligatoire.");
+
+  if (![0, 1, 2, 3].includes(etoiles)) errors.push('Le nombre d’étoiles doit être compris entre 0 et 3.');
 
   return errors;
 }
@@ -69,8 +140,9 @@ function validate(b, { partial = false } = {}) {
 async function checkUnique(b, excludeId = null) {
   const conflicts = [];
   const checks = [
-    ['nin', b.nin, 'Ce NIN'],
-    ['telephone', b.telephone, 'Ce téléphone']
+    ['nin', opt(b.nin), 'Ce NIN'],
+    ['telephone', opt(b.telephone), 'Ce téléphone'],
+    ['doc_numero', opt(b.doc_numero), 'Ce numéro de document']
   ];
   for (const [col, val, label] of checks) {
     if (!val) continue;
@@ -90,19 +162,23 @@ async function assureMatricules() {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
       const w = a.wilaya_code || '16';
       const t = a.type_code || 'AD';
-      const { matricule, num_ordre } = await generateMatricule({ wilaya_code: w, type_code: t, annee });
+      const { matricule, num_ordre } = await generateMatricule({ wilaya_code: w, type_code: t, annee, bureau_code: a.bureau_code });
       await run('UPDATE adherents SET matricule=?, num_ordre=?, annee=? WHERE id=?', [matricule, num_ordre, annee, a.id]);
     }
   } catch (err) { console.error(err); }
 }
 
-router.get('/preview/matricule', authenticate, authorize('admin', 'president', 'saisie'), async (req, res) => {
+router.get('/preview/matricule', authenticate, authorize('admin', 'president', 'perm:adherents_add'), async (req, res) => {
   try {
-    const { wilaya_code, type_code, annee } = req.query;
+    const { wilaya_code, type_code, annee, bureau_code } = req.query;
+    if (req.user.role === 'saisie' && String(type_code || '').toUpperCase() === 'BE') {
+      return res.status(403).json({ error: "Ce compte n'est pas autorisé à créer un membre du Bureau exécutif." });
+    }
     const generated = await generateMatricule({
       wilaya_code: wilaya_code || '16',
       type_code: type_code || 'AD',
-      annee: annee ? parseInt(annee, 10) : new Date().getFullYear()
+      annee: annee ? parseInt(annee, 10) : new Date().getFullYear(),
+      bureau_code,
     });
     res.json({ matricule: generated.matricule, num_ordre: generated.num_ordre });
   } catch (e) {
@@ -110,16 +186,16 @@ router.get('/preview/matricule', authenticate, authorize('admin', 'president', '
   }
 });
 
-router.get('/', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'president', 'perm:adherents_manage'), async (req, res) => {
   try {
     await assureMatricules();
     const { q, wilaya, type } = req.query;
     let sql = 'SELECT * FROM adherents WHERE 1=1';
     const params = [];
     if (q) {
-      sql += ' AND (nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR telephone LIKE ?)';
+      sql += ' AND (nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR telephone LIKE ? OR bureau_badge_type LIKE ?)';
       const like = `%${q}%`;
-      params.push(like, like, like, like);
+      params.push(like, like, like, like, like);
     }
     if (wilaya) { sql += ' AND wilaya_code = ?'; params.push(wilaya); }
     if (type) {
@@ -131,6 +207,8 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
         sql += ' AND type_code = ?';
         params.push(type);
       }
+    } else {
+      sql += " AND (type_code IS NULL OR type_code <> 'BE')";
     }
     sql += ' ORDER BY created_at DESC';
     const rows = await query(sql, params);
@@ -138,7 +216,7 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.get('/:id', authenticate, authorize('admin', 'president', 'perm:adherents_manage'), async (req, res) => {
   try {
     const a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
@@ -146,31 +224,47 @@ router.get('/:id', authenticate, authorize('admin', 'president'), async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/', authenticate, authorize('admin', 'president', 'saisie'), uploadPhoto.single('photo'), async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_add', 'perm:adherents_manage'), uploadPhoto.single('photo'), async (req, res) => {
   try {
     const b = req.body;
+    if (req.user.role === 'saisie' && String(b.type_code || '').toUpperCase() === 'BE') {
+      return res.status(403).json({ error: "Ce compte n'est pas autorisé à créer un membre du Bureau exécutif." });
+    }
     const errors = validate(b);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
     const conflicts = await checkUnique(b);
     if (conflicts.length) return res.status(409).json({ error: conflicts.join(' ') });
 
-    const annee = new Date(b.date_adhesion).getFullYear();
+    const type_code = normalizeTypeCode(b.type_code);
+    const wilaya_code = opt(b.wilaya_code, '16');
+    const date_adhesion = opt(b.date_adhesion);
+    const annee = date_adhesion ? new Date(date_adhesion).getFullYear() : new Date().getFullYear();
+    const bureau_code = type_code === 'BE' ? normalizeBureauCode(b.bureau_code) : null;
+    const bureau_badge_type = type_code === 'BE' ? opt(b.bureau_badge_type) : null;
     const generated = await generateMatricule({
-      wilaya_code: b.wilaya_code, 
-      type_code: b.type_code, 
-      annee: annee,
+      wilaya_code,
+      type_code,
+      annee,
+      bureau_code,
     });
-    
+
     const matricule = generated.matricule;
     const num_ordre = generated.num_ordre;
+    if (await get('SELECT id FROM adherents WHERE matricule = ?', [matricule])) {
+      return res.status(409).json({ error: 'Ce matricule existe déjà. Vérifiez le code Bureau exécutif.' });
+    }
     const photo = req.file ? `photos/${req.file.filename}` : null;
-    const description = b.description ? b.description.trim() : '';
+    const description = text(b.description);
+    const paiement = normalizePaiementData(b);
+    const niveau = normalizeNiveau(type_code, b.niveau, bureau_badge_type);
+    const etoiles = type_code === 'BE' ? 0 : normalizeEtoiles(b.etoiles);
+    const carte_remise = normalizeCarteRemise(b.carte_remise);
 
     const result = await run(
-      `INSERT INTO adherents (matricule, nom, prenom, nom_ar, prenom_ar, telephone, nin, doc_type, doc_numero, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [matricule, b.nom.trim(), b.prenom.trim(), b.nom_ar.trim(), b.prenom_ar.trim(), b.telephone.trim(), b.nin.trim(), b.doc_type || 'CNI', b.doc_numero ? b.doc_numero.trim() : '',
-        photo, b.wilaya_code, b.type_code, b.niveau || 'National', num_ordre, annee, b.date_adhesion, description]
+      `INSERT INTO adherents (matricule, nom, prenom, nom_ar, prenom_ar, telephone, nin, doc_type, doc_numero, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero),
+        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
     );
 
     const targetId = result?.insertId || result?.id || result;
@@ -182,10 +276,11 @@ router.post('/', authenticate, authorize('admin', 'president', 'saisie'), upload
 
     if (!created) {
       created = { 
-        id: targetId, matricule, nom: b.nom, prenom: b.prenom, nom_ar: b.nom_ar, prenom_ar: b.prenom_ar,
-        telephone: b.telephone, nin: b.nin, doc_type: b.doc_type, doc_numero: b.doc_numero, photo,
-        wilaya_code: b.wilaya_code, type_code: b.type_code, niveau: b.niveau, num_ordre, annee, date_adhesion: b.date_adhesion,
-        description: description
+        id: targetId, matricule, nom: text(b.nom), prenom: text(b.prenom), nom_ar: text(b.nom_ar), prenom_ar: text(b.prenom_ar),
+        telephone: opt(b.telephone), nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), photo,
+        wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion,
+        description, paiement_mode: paiement.paiement_mode, paiement_banque: paiement.paiement_banque, paiement_ref: paiement.paiement_ref,
+        bureau_code, bureau_badge_type, etoiles, carte_remise
       };
     }
 
@@ -196,32 +291,47 @@ router.post('/', authenticate, authorize('admin', 'president', 'saisie'), upload
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/:id', authenticate, authorize('admin', 'president'), uploadPhoto.single('photo'), async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents_manage'), uploadPhoto.single('photo'), async (req, res) => {
   try {
     const a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
     const b = req.body;
     const errors = validate(b);
     if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+    const conflicts = await checkUnique(b, a.id);
+    if (conflicts.length) return res.status(409).json({ error: conflicts.join(' ') });
 
     const photo = req.file ? `photos/${req.file.filename}` : a.photo;
-    const annee = new Date(b.date_adhesion).getFullYear();
-    const description = b.description !== undefined ? b.description.trim() : a.description;
+    const type_code = normalizeTypeCode(b.type_code);
+    const wilaya_code = opt(b.wilaya_code, a.wilaya_code || '16');
+    const date_adhesion = opt(b.date_adhesion);
+    const annee = date_adhesion ? new Date(date_adhesion).getFullYear() : (a.annee || new Date().getFullYear());
+    const description = b.description !== undefined ? text(b.description) : a.description;
+    const paiement = normalizePaiementData(b);
+    const bureau_code = type_code === 'BE' ? normalizeBureauCode(b.bureau_code) : null;
+    const bureau_badge_type = type_code === 'BE' ? opt(b.bureau_badge_type) : null;
+    const niveau = normalizeNiveau(type_code, b.niveau, bureau_badge_type);
+    const etoiles = type_code === 'BE' ? 0 : normalizeEtoiles(b.etoiles);
+    const carte_remise = normalizeCarteRemise(b.carte_remise);
 
     let matricule = a.matricule;
     let num_ordre = a.num_ordre;
-    
-    if (!matricule || b.wilaya_code !== a.wilaya_code || b.type_code !== a.type_code || annee !== a.annee) {
-      const gen = await generateMatricule({ wilaya_code: b.wilaya_code, type_code: b.type_code, annee });
-      matricule = gen.matricule; 
+
+    if (!matricule || wilaya_code !== a.wilaya_code || type_code !== a.type_code || annee !== a.annee || bureau_code !== (a.bureau_code || null)) {
+      const gen = await generateMatricule({ wilaya_code, type_code, annee, bureau_code });
+      matricule = gen.matricule;
       num_ordre = gen.num_ordre;
+    }
+    const sameMat = await get('SELECT id FROM adherents WHERE matricule = ? AND id <> ?', [matricule, a.id]);
+    if (sameMat) {
+      return res.status(409).json({ error: 'Ce matricule existe déjà. Vérifiez le code Bureau exécutif.' });
     }
 
     await run(
       `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_ar=?, prenom_ar=?, telephone=?, nin=?, doc_type=?, doc_numero=?, photo=?,
-       wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=? WHERE id=?`,
-      [matricule, b.nom.trim(), b.prenom.trim(), b.nom_ar.trim(), b.prenom_ar.trim(), b.telephone.trim(), b.nin.trim(), b.doc_type || 'CNI', b.doc_numero ? b.doc_numero.trim() : '',
-        photo, b.wilaya_code, b.type_code, b.niveau || 'National', num_ordre, annee, b.date_adhesion, description, a.id]
+       wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, etoiles=?, carte_remise=? WHERE id=?`,
+      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero),
+        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise, a.id]
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);
     if (upd) upd.matricule = matricule;
@@ -236,14 +346,30 @@ router.delete('/:id', authenticate, authorize('admin', 'president'), async (req,
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:id/carte', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.patch('/:id/ranking', authenticate, authorize('admin', 'president'), async (req, res) => {
+  try {
+    const a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
+    if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
+    const monthRank = req.body?.top_month_rank === null || req.body?.top_month_rank === '' ? null : Math.max(1, parseInt(req.body?.top_month_rank, 10) || 1);
+    const yearRank = req.body?.top_year_rank === null || req.body?.top_year_rank === '' ? null : Math.max(1, parseInt(req.body?.top_year_rank, 10) || 1);
+
+    if (monthRank !== null) await run('UPDATE adherents SET top_month_rank = NULL WHERE top_month_rank = ? AND id <> ?', [monthRank, a.id]);
+    if (yearRank !== null) await run('UPDATE adherents SET top_year_rank = NULL WHERE top_year_rank = ? AND id <> ?', [yearRank, a.id]);
+
+    await run('UPDATE adherents SET top_month_rank = ?, top_year_rank = ? WHERE id = ?', [monthRank, yearRank, a.id]);
+    const updated = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);
+    res.json({ adherent: enrich(updated) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/:id/carte', authenticate, authorize('admin', 'president', 'perm:adherents_manage'), async (req, res) => {
   try {
     let a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
     
     if (!a.matricule || a.matricule === "") {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
-      const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee });
+      const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee, bureau_code: a.bureau_code });
       a.matricule = gen.matricule;
       a.num_ordre = gen.num_ordre;
       a.annee = annee;
@@ -269,14 +395,14 @@ router.get('/:id/carte', authenticate, authorize('admin', 'president'), async (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:id/dossier', authenticate, authorize('admin', 'president', 'saisie'), async (req, res) => {
+router.get('/:id/dossier', authenticate, authorize('admin', 'president', 'perm:adherents_add', 'perm:adherents_manage'), async (req, res) => {
   try {
     let a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
     
     if (!a.matricule || a.matricule === "") {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
-      const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee });
+      const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee, bureau_code: a.bureau_code });
       a.matricule = gen.matricule;
       a.num_ordre = gen.num_ordre;
       a.annee = annee;
@@ -313,10 +439,13 @@ function getTypeAr(code) {
 function renderCarteHTML(a, ad, info, photoDataUri) {
   const modeletype = String(info.modele || '').toLowerCase();
   const qualiteText = String(info.qualiteAr || '');
-  const isGold = (modeletype === 'gold' || qualiteText.includes('مسؤول'));
-  
-  const modelP1 = isGold ? getDynamicDataUri('gold_p1.png')   : getDynamicDataUri('simple_p1.png');
-  const modelP2 = isGold ? getDynamicDataUri('gold_p2.png')   : getDynamicDataUri('simple_p2.png');
+  const isBE = modeletype === 'be' || String(a.type_code || '').toUpperCase() === 'BE';
+  const isGold = !isBE && (modeletype === 'gold' || qualiteText.includes('مسؤول'));
+
+  const beP1 = getDynamicDataUri('be_1.png');
+  const beP2 = getDynamicDataUri('be_2.png');
+  const modelP1 = isBE ? (beP1 || getDynamicDataUri('gold_p1.png')) : (isGold ? getDynamicDataUri('gold_p1.png') : getDynamicDataUri('simple_p1.png'));
+  const modelP2 = isBE ? (beP2 || getDynamicDataUri('gold_p2.png')) : (isGold ? getDynamicDataUri('gold_p2.png') : getDynamicDataUri('simple_p2.png'));
   
   let cachetUri = '';
   try {
@@ -326,7 +455,9 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
 
   const nomAr    = a.nom_ar    || a.nom    || '';
   const prenomAr = a.prenom_ar || a.prenom || '';
-  const typeAr   = info.qualiteAr || getTypeAr(a.type_code);
+  const typeAr   = String(a.type_code || '').toUpperCase() === 'BE'
+    ? (a.bureau_badge_type || info.qualiteAr || 'Bureau exécutif')
+    : (info.qualiteAr || getTypeAr(a.type_code));
 
   const matricule = a.matricule || ad.matricule || '';
   const dateAdh = formatDateAdhesion(a.date_adhesion);
@@ -391,15 +522,15 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
     line-height: 1;
 }
   
-  .t-nom    { right:14.45%; top:39.85%; font-size:2.6mm; }
-  .t-prenom { right:13.70%; top:46.60%; font-size:2.6mm; }
-  .t-type   { right:13.78%; top:54.05%; font-size:2.8mm; font-weight:900; color:#232323; }
+  .t-nom    { right:14.45%; top:37.85%; font-size:2.6mm; }
+  .t-prenom { right:14.70%; top:44.80%; font-size:2.6mm; }
+  .t-type   { right:15.15%; top:52.65%; font-size:2.8mm; font-weight:900; color:#232323; }
 
  .t-mat {
     position: absolute; 
     z-index: 5;
-    right: 25.20%; 
-    top: 70.65%;
+    right: 26.40%; 
+    top: 68.50%;
     font-family: 'Oswald', 'Arial Narrow', sans-serif ;
     font-size: 2.6mm ; 
     font-weight: 700 ;
@@ -422,6 +553,7 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
     background: transparent ;
     background-color: transparent ;
   }
+
 
   @media print {
     html, body { background:transparent !important; }
@@ -470,6 +602,9 @@ function renderDossierHTML(a, ad, info) {
   const typeMembreFr = esc(ad.type_libelle || '');
   const idNum = esc(a.doc_numero || a.nin || '');
   const rcNum = esc(a.doc_type === 'RC' ? a.doc_numero : '');
+  const paiementMode = normalizePaiementMode(a.paiement_mode);
+  const paiementRef = esc(a.paiement_ref || '');
+  const paiementBanque = esc(a.paiement_banque || '');
   
   let expFr = '----/--/--';
   if (a.date_adhesion) {
@@ -585,12 +720,12 @@ function renderDossierHTML(a, ad, info) {
       
       <input type="text" style="left:57%; top:25.8%; width:41%; height:2.2%" value="${description}" title="Description" />
       
-      <input type="checkbox" class="chk" style="left:25.3%; top:30.2%" title="Chèque" />
-      <input type="text" style="left:40.5%; top:29.8%; width:14.5%; height:2.0%"  />
-      <input type="checkbox" class="chk" style="left:56.5%; top:30.2%" title="Virement" />
-      <input type="checkbox" class="chk" style="left:82.5%; top:30.2%" title="Espèce" />
+      <input type="checkbox" class="chk" style="left:25.3%; top:30.2%" title="Chèque" ${paiementMode === 'cheque' ? 'checked' : ''} />
+      <input type="text" style="left:40.5%; top:29.8%; width:14.5%; height:2.0%" value="${paiementRef}" />
+      <input type="checkbox" class="chk" style="left:56.5%; top:30.2%" title="Virement" ${paiementMode === 'virement' ? 'checked' : ''} />
+      <input type="checkbox" class="chk" style="left:82.5%; top:30.2%" title="Espèce" ${paiementMode === 'espece' ? 'checked' : ''} />
 
-      <input type="text" style="left:20%; top:37.6%; width:35%; height:2.2%" />
+      <input type="text" style="left:20%; top:37.6%; width:35%; height:2.2%" value="${paiementBanque}" />
       <input type="date" style="left:79.5%; top:37.6%; width:14%; height:2.2%" />
       <input type="text" style="left:14.7%; top:40.7%; width:27%; height:2.2%" value="${esc(a.niveau || '')}" />
       <input type="text" style="left:71%; top:40.7%; width:26%; height:2.2%" value="${rcNum}"  />

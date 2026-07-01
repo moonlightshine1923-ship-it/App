@@ -88,7 +88,7 @@ router.post('/public', uploadDoc.array('pieces', 5), async (req, res) => {
 });
 
 // ===== Consultation / gestion (admin & président uniquement) =====
-router.get('/', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'president', 'perm:demandes_view', 'perm:demandes_edit'), async (req, res) => {
   try {
     const { statut, priorite, wilaya, q } = req.query; // Retrait de type_demande
     let sql = 'SELECT * FROM demandes_site WHERE 1=1';
@@ -108,7 +108,7 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.get('/:id', authenticate, authorize('admin', 'president', 'perm:demandes_view', 'perm:demandes_edit'), async (req, res) => {
   try {
     const d = await get('SELECT * FROM demandes_site WHERE id = ?', [req.params.id]);
     if (!d) return res.status(404).json({ error: 'Demande introuvable.' });
@@ -116,7 +116,7 @@ router.get('/:id', authenticate, authorize('admin', 'president'), async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.patch('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.patch('/:id', authenticate, authorize('admin', 'president', 'perm:demandes_edit'), async (req, res) => {
   try {
     const d = await get('SELECT * FROM demandes_site WHERE id = ?', [req.params.id]);
     if (!d) return res.status(404).json({ error: 'Demande introuvable.' });
@@ -131,7 +131,7 @@ router.patch('/:id', authenticate, authorize('admin', 'president'), async (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.patch('/:id/cloturer', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.patch('/:id/cloturer', authenticate, authorize('admin', 'president', 'perm:demandes_edit'), async (req, res) => {
   try {
     const r = await run("UPDATE demandes_site SET statut='Clôturée' WHERE id=?", [req.params.id]);
     if (!r.affectedRows) return res.status(404).json({ error: 'Demande introuvable.' });
@@ -139,7 +139,7 @@ router.patch('/:id/cloturer', authenticate, authorize('admin', 'president'), asy
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin', 'president', 'perm:demandes_edit'), async (req, res) => {
   try {
     const r = await run('DELETE FROM demandes_site WHERE id = ?', [req.params.id]);
     if (!r.affectedRows) return res.status(404).json({ error: 'Demande introuvable.' });

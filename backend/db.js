@@ -55,7 +55,6 @@ async function hasColumn(table, col) {
 }
 
 export async function initSchema() {
-  // --- Adhérents ---
   await query(`
     CREATE TABLE IF NOT EXISTS adherents (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -75,22 +74,33 @@ export async function initSchema() {
       num_ordre INT DEFAULT 0,
       annee INT DEFAULT 0,
       date_adhesion DATE DEFAULT NULL,
+      description TEXT,
+      fichier_final VARCHAR(255),
+      dossier_pdf VARCHAR(255),
+      paiement_mode VARCHAR(20),
+      paiement_banque VARCHAR(150),
+      paiement_ref VARCHAR(100),
+      bureau_code VARCHAR(3),
+      bureau_badge_type VARCHAR(100),
+      etoiles TINYINT DEFAULT 0,
+      carte_remise TINYINT(1) DEFAULT 0,
+      top_month_rank INT DEFAULT NULL,
+      top_year_rank INT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  // --- Comptes ---
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       email VARCHAR(150) UNIQUE NOT NULL,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(20) NOT NULL,
+      permissions TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  // Table des pièces additionnelles sans clé étrangère stricte
   await query(`
     CREATE TABLE IF NOT EXISTS demandes_site_pieces (
       id BIGINT(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -122,28 +132,45 @@ async function ensureMigrations() {
     const cols = await query("SHOW COLUMNS FROM adherents LIKE 'statut'");
     if (cols.length) await query('ALTER TABLE adherents DROP COLUMN statut');
   } catch {}
+
   try {
-    if (!(await hasColumn('adherents', 'doc_type'))) {
-      await query("ALTER TABLE adherents ADD COLUMN doc_type VARCHAR(2) DEFAULT 'RC'");
-    }
+    if (!(await hasColumn('adherents', 'doc_type'))) await query("ALTER TABLE adherents ADD COLUMN doc_type VARCHAR(2) DEFAULT 'RC'");
     if (!(await hasColumn('adherents', 'doc_numero'))) {
       await query('ALTER TABLE adherents ADD COLUMN doc_numero VARCHAR(20)');
       if (await hasColumn('adherents', 'rc')) {
         await query("UPDATE adherents SET doc_numero = rc, doc_type = 'RC' WHERE rc IS NOT NULL AND (doc_numero IS NULL OR doc_numero = '')");
       }
     }
-  } catch (e) { console.warn('  Migration doc_type/doc_numero :', e.message); }
+  } catch (e) { console.warn('Migration doc_type/doc_numero :', e.message); }
 
   try {
     if (!(await hasColumn('adherents', 'nom_ar'))) await query('ALTER TABLE adherents ADD COLUMN nom_ar VARCHAR(100) AFTER prenom');
     if (!(await hasColumn('adherents', 'prenom_ar'))) await query('ALTER TABLE adherents ADD COLUMN prenom_ar VARCHAR(100) AFTER nom_ar');
-  } catch (e) { console.warn('  Migration nom_ar/prenom_ar :', e.message); }
+  } catch (e) { console.warn('Migration nom_ar/prenom_ar :', e.message); }
+
+  try {
+    if (!(await hasColumn('adherents', 'description'))) await query('ALTER TABLE adherents ADD COLUMN description TEXT AFTER created_at');
+    if (!(await hasColumn('adherents', 'fichier_final'))) await query('ALTER TABLE adherents ADD COLUMN fichier_final VARCHAR(255) AFTER description');
+    if (!(await hasColumn('adherents', 'dossier_pdf'))) await query('ALTER TABLE adherents ADD COLUMN dossier_pdf VARCHAR(255) AFTER fichier_final');
+    if (!(await hasColumn('adherents', 'paiement_mode'))) await query('ALTER TABLE adherents ADD COLUMN paiement_mode VARCHAR(20) AFTER dossier_pdf');
+    if (!(await hasColumn('adherents', 'paiement_banque'))) await query('ALTER TABLE adherents ADD COLUMN paiement_banque VARCHAR(150) AFTER paiement_mode');
+    if (!(await hasColumn('adherents', 'paiement_ref'))) await query('ALTER TABLE adherents ADD COLUMN paiement_ref VARCHAR(100) AFTER paiement_banque');
+    if (!(await hasColumn('adherents', 'bureau_code'))) await query('ALTER TABLE adherents ADD COLUMN bureau_code VARCHAR(3) AFTER paiement_ref');
+    if (!(await hasColumn('adherents', 'bureau_badge_type'))) await query('ALTER TABLE adherents ADD COLUMN bureau_badge_type VARCHAR(100) AFTER bureau_code');
+    if (!(await hasColumn('adherents', 'etoiles'))) await query('ALTER TABLE adherents ADD COLUMN etoiles TINYINT DEFAULT 0 AFTER bureau_badge_type');
+    if (!(await hasColumn('adherents', 'carte_remise'))) await query('ALTER TABLE adherents ADD COLUMN carte_remise TINYINT(1) DEFAULT 0 AFTER etoiles');
+    if (!(await hasColumn('adherents', 'top_month_rank'))) await query('ALTER TABLE adherents ADD COLUMN top_month_rank INT DEFAULT NULL AFTER carte_remise');
+    if (!(await hasColumn('adherents', 'top_year_rank'))) await query('ALTER TABLE adherents ADD COLUMN top_year_rank INT DEFAULT NULL AFTER top_month_rank');
+  } catch (e) { console.warn('Migration colonnes adhérents étendues :', e.message); }
+
+  try {
+    if (!(await hasColumn('users', 'permissions'))) await query('ALTER TABLE users ADD COLUMN permissions TEXT AFTER role');
+  } catch (e) { console.warn('Migration permissions users :', e.message); }
 
   for (const [name, col] of [['uq_adh_nin', 'nin'], ['uq_adh_tel', 'telephone'], ['uq_adh_doc', 'doc_numero']]) {
     try { await query(`ALTER TABLE adherents ADD UNIQUE KEY ${name} (${col})`); } catch {}
   }
 
-  // Ajout automatique en douceur des colonnes de gestion administrative dans votre table demandes_site officielle :
   for (const [col, ddl] of [
     ['numero', "ADD COLUMN numero VARCHAR(30)"],
     ['statut', "ADD COLUMN statut VARCHAR(20) NOT NULL DEFAULT 'En attente'"],
@@ -155,10 +182,9 @@ async function ensureMigrations() {
       if (!(await hasColumn('demandes_site', col))) {
         await query(`ALTER TABLE demandes_site ${ddl}`);
         if (col === 'numero') {
-          // Si on vient d'ajouter la colonne, on génère un identifiant pour vos lignes existantes
           const list = await query('SELECT id FROM demandes_site WHERE numero IS NULL');
           for (let i = 0; i < list.length; i++) {
-            await query('UPDATE demandes_site SET numero = ? WHERE id = ?', [`DEM-2026-${String(i+1).padStart(4,'0')}`, list[i].id]);
+            await query('UPDATE demandes_site SET numero = ? WHERE id = ?', [`DEM-2026-${String(i + 1).padStart(4, '0')}`, list[i].id]);
           }
         }
       }

@@ -80,10 +80,11 @@ export const TYPES = [
   { code: 'AD_gold', realCode: 'AD', libelle: 'Adhérent gold', niveau: 'Adhérent Gold' },
   { code: 'MA', realCode: 'MA', libelle: 'Membre Actif', niveau: 'Membre Actif' },
   { code: 'CR', realCode: 'CR', libelle: 'Conseiller', niveau: 'Conseiller' },
+  { code: 'BE', realCode: 'BE', libelle: 'Bureau exécutif', niveau: 'Bureau exécutif' },
 ];
 
 // Niveaux d'adhésion
-export const NIVEAUX = ['Adhérent Simple', 'Adhérent Gold', 'Membre Actif', 'Conseiller'];
+export const NIVEAUX = ['Adhérent Simple', 'Adhérent Gold', 'Membre Actif', 'Conseiller', 'Bureau exécutif'];
 
 // Types de document d'identification professionnelle (avec règle de longueur exacte/plage)
 export const DOC_TYPES = [
@@ -138,7 +139,9 @@ export function carteInfo(adherent) {
   let basAr = 'بطاقة منخرط';      // adhérent simple
   let qualiteAr = 'منخرط';
 
-  if (niveau === 'Conseiller' || type === 'CR') {
+  if (niveau === 'Bureau exécutif' || type === 'BE') {
+    modele = 'be'; basAr = 'بطاقة المكتب التنفيذي'; qualiteAr = adherent.bureau_badge_type || 'المكتب التنفيذي';
+  } else if (niveau === 'Conseiller' || type === 'CR') {
     modele = 'gold'; basAr = 'بطاقة مستشار'; qualiteAr = 'مستشار';
   } else if (niveau === 'Membre Actif' || type === 'MA') {
     modele = 'gold'; basAr = 'بطاقة عضو فعّال'; qualiteAr = 'عضو فعّال';

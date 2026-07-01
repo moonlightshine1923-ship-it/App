@@ -44,7 +44,7 @@ const API = (() => {
     users: () => request('GET', '/users'),
     createUser: (data) => request('POST', '/users', data),
     resetUserPassword: (id, password) => request('PATCH', `/users/${id}/password`, { password }),
-    updateUserRole: (id, role) => request('PATCH', `/users/${id}/role`, { role }),
+    updateUserRole: (id, role, permissions = []) => request('PATCH', `/users/${id}/role`, { role, permissions }),
     deleteUser: (id) => request('DELETE', '/users/' + id),
 
     adherents: (params = {}) => {
@@ -52,10 +52,11 @@ const API = (() => {
       return request('GET', '/adherents' + (q ? '?' + q : ''));
     },
     adherent: (id) => request('GET', '/adherents/' + id),
-    previewMatricule: (wilaya_code, type_code, annee) =>
-      request('GET', `/adherents/preview/matricule?wilaya_code=${wilaya_code}&type_code=${type_code}&annee=${annee}`),
+    previewMatricule: (wilaya_code, type_code, annee, bureau_code = '') =>
+      request('GET', `/adherents/preview/matricule?wilaya_code=${encodeURIComponent(wilaya_code)}&type_code=${encodeURIComponent(type_code)}&annee=${encodeURIComponent(annee)}&bureau_code=${encodeURIComponent(bureau_code)}`),
     createAdherent: (form) => request('POST', '/adherents', form, true),
     updateAdherent: (id, form) => request('PUT', '/adherents/' + id, form, true),
+    updateAdherentRanking: (id, data) => request('PATCH', `/adherents/${id}/ranking`, data),
     deleteAdherent: (id) => request('DELETE', '/adherents/' + id),
     backup: () => request('POST', '/backup', {}),
     listBackups: () => request('GET', '/backup'),

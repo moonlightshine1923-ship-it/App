@@ -7,10 +7,22 @@ const Views = (() => {
   let REF = null;
 
   let ROLE = 'admin';
+  let PERMS = [];
 
   function setRef(r) { REF = r; }
   function setRole(r) { ROLE = r; }
+  function setPermissions(p = []) { PERMS = Array.isArray(p) ? p : []; }
   function container() { return $('#viewContainer'); }
+  function hasPerm(code) {
+    return ROLE === 'admin' || ROLE === 'president' || PERMS.includes(code) || (code === 'demandes_view' && PERMS.includes('demandes_edit'));
+  }
+  function isSaisieOnly() { return ROLE === 'saisie'; }
+  function canAccessBE() { return ROLE === 'admin' || ROLE === 'president'; }
+  function canViewDemandes() { return hasPerm('demandes_view') || hasPerm('demandes_edit'); }
+  function canEditDemandes() { return hasPerm('demandes_edit'); }
+  function canAddAdherents() { return ROLE === 'admin' || ROLE === 'president' || hasPerm('adherents_add') || hasPerm('adherents_manage'); }
+  function canManageAdherents() { return ROLE === 'admin' || ROLE === 'president' || hasPerm('adherents_manage'); }
+  function canViewDocuments() { return ROLE === 'admin' || ROLE === 'president' || hasPerm('documents_view'); }
 
   function wilayaOptions(sel) {
     return REF.wilayas.map((w) => `<option value="${w.code}" ${w.code === sel ? 'selected' : ''}>${w.code} — ${esc(w.nom)}</option>`).join('');
@@ -23,6 +35,13 @@ const Views = (() => {
   }
   function niveauOptions(sel) {
     return REF.niveaux.map((n) => `<option ${n === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  }
+  function paiementLabel(mode) {
+    const m = String(mode || '').toLowerCase();
+    if (m === 'cheque') return 'Chèque';
+    if (m === 'espece') return 'Espèce';
+    if (m === 'virement') return 'Virement';
+    return '';
   }
   function fmtDate(d) {
     if (!d) return '—';
@@ -37,6 +56,124 @@ const Views = (() => {
       }
     }
     return str.slice(0, 10);
+  }
+
+  const ADH_NOTIF_KEY = 'opa_adhesion_notifications_closed_v1';
+
+  function localDateString(date) {
+    const yr = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const da = String(date.getDate()).padStart(2, '0');
+    return `${yr}-${mo}-${da}`;
+  }
+
+  function addOneYear(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00`);
+    if (isNaN(d)) return null;
+    d.setFullYear(d.getFullYear() + 1);
+    return d;
+  }
+
+  function daysBetween(fromDate, toDate) {
+    const ms = 24 * 60 * 60 * 1000;
+    const start = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+    const end = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+    return Math.round((end - start) / ms);
+  }
+
+  function getExpirationInfo(adherent) {
+    const expiration = addOneYear(adherent?.date_adhesion);
+    if (!expiration) return null;
+    const today = new Date();
+    const daysLeft = daysBetween(today, expiration);
+    return {
+      expiration,
+      expirationText: localDateString(expiration),
+      daysLeft,
+      isExpired: daysLeft < 0,
+      isSoon: daysLeft >= 0 && daysLeft <= 30,
+    };
+  }
+
+  function loadClosedNotifications() {
+    try {
+      return JSON.parse(localStorage.getItem(ADH_NOTIF_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  function saveClosedNotifications(data) {
+    localStorage.setItem(ADH_NOTIF_KEY, JSON.stringify(data || {}));
+  }
+
+  function notificationToken(item) {
+    return `${item.id || 'x'}::${item.date_expiration || item.expirationText || ''}`;
+  }
+
+  function filterActiveNotifications(list = []) {
+    const closed = loadClosedNotifications();
+    return list.filter((item) => !closed[notificationToken(item)]);
+  }
+
+  function closeNotification(item) {
+    const closed = loadClosedNotifications();
+    closed[notificationToken(item)] = true;
+    saveClosedNotifications(closed);
+  }
+
+  function collectExpirationAlerts(list = []) {
+    return list
+      .filter((a) => (a.type_code || '') !== 'BE')
+      .map((a) => {
+        const info = getExpirationInfo(a);
+        if (!info || !info.isSoon) return null;
+        return {
+          id: a.id,
+          nom: a.nom || '',
+          prenom: a.prenom || '',
+          matricule: a.matricule || '',
+          date_expiration: info.expirationText,
+          daysLeft: info.daysLeft,
+        };
+      })
+      .filter(Boolean)
+      .sort((x, y) => x.daysLeft - y.daysLeft || String(x.prenom).localeCompare(String(y.prenom)));
+  }
+
+  function renderAdhesionNotifications(list = [], { showTitle = true } = {}) {
+    const active = filterActiveNotifications(list);
+    if (!active.length || ROLE !== 'admin') return '';
+    return `
+      <div class="panel" style="margin-bottom:18px;border:1px solid #fcd34d;background:#fffdf5">
+        ${showTitle ? `<div class="panel-head"><h3>🔔 Notifications adhésion</h3></div>` : ''}
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+          ${active.map((a) => `
+            <div style="display:flex;align-items:flex-start;gap:12px;border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:12px 14px">
+              <div style="font-size:18px;line-height:1">⏳</div>
+              <div style="flex:1">
+                <div style="font-weight:700;color:#92400e">${esc(a.prenom)} ${esc(a.nom)}</div>
+                <div class="muted" style="margin-top:2px">Matricule : <span class="mono">${esc(a.matricule || '—')}</span></div>
+                <div style="margin-top:4px;color:#92400e;font-size:13px">Son adhésion se termine le <b>${esc(a.date_expiration)}</b>${a.daysLeft === 0 ? ' (aujourd’hui)' : ` dans <b>${a.daysLeft}</b> jour${a.daysLeft > 1 ? 's' : ''}` }.</div>
+              </div>
+              <button type="button" class="btn btn-dark btn-sm" data-close-adh-notif="${esc(notificationToken(a))}">Fermer</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
+  function bindAdhesionNotifications(list = [], rerender) {
+    const active = filterActiveNotifications(list);
+    document.querySelectorAll('[data-close-adh-notif]').forEach((btn) => {
+      btn.onclick = () => {
+        const item = active.find((x) => notificationToken(x) === btn.dataset.closeAdhNotif);
+        if (!item) return;
+        closeNotification(item);
+        rerender && rerender();
+      };
+    });
   }
 
   /* ============ DASHBOARD PROFESSIONNEL ============ */
@@ -179,12 +316,15 @@ const Views = (() => {
           <button class="btn btn-dark btn-sm" style="margin-left:auto" onclick="Views.demandesList()">Traiter →</button>
         </div>` : ''}
 
+      ${renderAdhesionNotifications(s.adhesionsBientotExpirantes || [], { showTitle: true })}
+
       <!-- KPI PRINCIPAUX -->
       <div class="kpi-row">
         ${kpiCard('total', '👥', s.totalAdherents, 'Total adhérents', `${s.nouveauxMois} nouveau${s.nouveauxMois > 1 ? 'x' : ''} ce mois`, '#3b82f6')}
         ${kpiCard('ad', '▣', a.AD, 'Adhérents (AD)', `dont ${a.gold} Gold`, '#6366f1')}
         ${kpiCard('ma', '⬡', a.MA, 'Membres Actifs (MA)', `${a.MA ? ((a.MA/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#0891b2')}
         ${kpiCard('cr', '◆', a.CR, 'Conseillers (CR)', `${a.CR ? ((a.CR/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#7c3aed')}
+        ${kpiCard('be', '🏛️', s.totalBureauExecutif || 0, 'Bureau exécutif', 'Rubrique séparée', '#8b5cf6')}
         ${kpiCard('ouvertes', '📨', s.demandes.ouvertes, 'Demandes ouvertes', 'En attente de traitement', '#f59e0b')}
         ${kpiCard('cloturees', '✓', s.demandes.cloturees, 'Demandes clôturées', `Taux : ${tauxTraitement}%`, '#10b981')}
       </div>
@@ -260,11 +400,24 @@ const Views = (() => {
                 <div class="qa-ico" style="background:rgba(16,185,129,.1);color:#10b981">📁</div>
                 <div><div>Documents</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Gestion documentaire</div></div>
               </button>
+              <button class="qa-btn" id="qaBureau">
+                <div class="qa-ico" style="background:rgba(139,92,246,.1);color:#8b5cf6">🏛️</div>
+                <div><div>Bureau exécutif</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">${s.totalBureauExecutif || 0} membre(s)</div></div>
+              </button>
               <button class="qa-btn" id="qaComptes">
                 <div class="qa-ico" style="background:rgba(124,58,237,.1);color:#7c3aed">👥</div>
                 <div><div>Comptes</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Gestion des utilisateurs</div></div>
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-panel" style="margin-bottom:28px">
+        <div class="dash-panel-head"><h3>⭐ Classement des adhérents par étoiles</h3></div>
+        <div class="dash-panel-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+            ${[0,1,2,3].map((star) => renderDashboardStarGroup(star, s.starGroups?.[star] || [])).join('')}
           </div>
         </div>
       </div>
@@ -314,6 +467,10 @@ const Views = (() => {
               <span class="metric-val" style="color:#3b82f6">${s.nouveauxMois}</span>
             </div>
             <div class="metric-row">
+              <span class="metric-label">Bureau exécutif</span>
+              <span class="metric-val" style="color:#8b5cf6">${s.totalBureauExecutif || 0}</span>
+            </div>
+            <div class="metric-row">
               <span class="metric-label">Demandes en cours</span>
               <span class="metric-val" style="color:#f59e0b">${s.demandes.ouvertes}</span>
             </div>
@@ -338,7 +495,10 @@ const Views = (() => {
     $('#qaAddAdh').onclick = () => adherentForm(null, adherentsList);
     $('#qaDemandes').onclick = () => demandesList();
     $('#qaDocuments').onclick = () => documentsList();
+    $('#qaBureau').onclick = () => bureauExecutifList();
     $('#qaComptes').onclick = () => comptesList();
+    c.querySelectorAll('[data-star-view]').forEach((el) => el.onclick = () => adherentDetail(el.dataset.starView, adherentsList));
+    bindAdhesionNotifications(s.adhesionsBientotExpirantes || [], dashboard);
   }
 
   function kpiCard(id, ico, val, lbl, sub, color) {
@@ -368,34 +528,91 @@ const Views = (() => {
 /* ============ LISTE ADHÉRENTS ============ */
 /* ============ ADHÉRENTS ============ */
 
+  function renderStars(count = 0) {
+    const n = Math.max(0, Math.min(3, Number.parseInt(count, 10) || 0));
+    return `<span title="${n} étoile(s)" style="letter-spacing:1px;color:#d4a017">${'★'.repeat(n)}<span style="color:#cbd5e1">${'☆'.repeat(3 - n)}</span></span>`;
+  }
+
+  function renderDashboardStarGroup(star, list = []) {
+    return `
+      <div style="border:1px solid var(--border, #e2e8f0);border-radius:12px;overflow:hidden;background:var(--card,#fff)">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border, #e2e8f0);display:flex;align-items:center;justify-content:space-between">
+          <div style="font-weight:700">Groupe ${star} étoile${star > 1 ? 's' : ''}</div>
+          <div>${renderStars(star)}</div>
+        </div>
+        <div style="max-height:220px;overflow:auto">
+          ${list.length ? list.map((a) => `
+            <button type="button" data-star-view="${a.id}" style="width:100%;text-align:left;border:none;background:transparent;padding:10px 14px;border-bottom:1px solid var(--border,#e2e8f0);cursor:pointer">
+              <div style="font-weight:600;color:var(--text)">${esc((a.prenom || '').trim() || '—')} ${esc((a.nom || '').trim() || '')}</div>
+              <div style="font-size:12px;color:var(--muted,#94a3b8)">${esc(a.matricule || 'Sans matricule')}</div>
+            </button>
+          `).join('') : `<div class="muted" style="padding:14px">Aucun adhérent dans ce groupe.</div>`}
+        </div>
+      </div>`;
+  }
+
+  function specialBadge() {
+    return `<span style="font-size:12px;font-weight:700;color:var(--text)">Badge Bureau exécutif</span>`;
+  }
+
+  function filteredTypeOptions(includeBE = false) {
+    return REF.types
+      .filter((t) => includeBE || (t.code !== 'BE' && t.realCode !== 'BE'))
+      .map((t) => `<option value="${t.code}">${esc(t.libelle)}</option>`)
+      .join('');
+  }
+
   async function adherentsList() {
+    return membersListView({ mode: 'adherents' });
+  }
+
+  async function bureauExecutifList() {
+    const c = container();
+    if (isSaisieOnly()) {
+      c.innerHTML = UI.emptyState('🔒', "Vous n'avez pas accès au Bureau exécutif.");
+      return;
+    }
+    return membersListView({ mode: 'bureau' });
+  }
+
+  async function membersListView({ mode = 'adherents' } = {}) {
+    const isBureau = mode === 'bureau';
     const c = container();
     c.innerHTML = `
       <div class="toolbar" style="flex-wrap: wrap; gap: 10px;">
-        <input type="search" id="adhSearch" placeholder="Rechercher (nom, matricule, NIN, document, téléphone)…" />
+        <input type="search" id="adhSearch" placeholder="${isBureau ? 'Rechercher (nom, matricule, type badge, téléphone)…' : 'Rechercher (nom, matricule, NIN, document, téléphone)…'}" />
         <select id="adhWilaya"><option value="">Toutes wilayas</option>${REF.wilayas.map((w) => `<option value="${w.code}">${w.code} — ${esc(w.nom)}</option>`).join('')}</select>
-        <select id="adhType"><option value="">Tous types</option>${REF.types.map((t) => `<option value="${t.code}">${esc(t.libelle)}</option>`).join('')}</select>
+        ${isBureau ? '' : `<select id="adhType"><option value="">Tous types</option>${filteredTypeOptions(false)}</select>`}
         <button class="btn btn-dark" id="refreshAdhBtn" title="Rafraîchir">⟳ Rafraîchir</button>
-        <button class="btn btn-gold" id="addAdhBtn">+ Nouvel adhérent</button>
+        <button class="btn btn-gold" id="addAdhBtn">+ ${isBureau ? 'Nouveau membre BE' : 'Nouvel adhérent'}</button>
         <button class="btn btn-danger" id="bulkDeleteAdhBtn" style="display: none;">✕ Supprimer la sélection (<span id="bulkAdhCount">0</span>)</button>
       </div>
+      ${isBureau ? '' : '<div id="adhNotifZone"></div>'}
       <div id="adhTable"><div class="muted">Chargement…</div></div>`;
 
     async function load() {
       const params = {};
       const q = $('#adhSearch').value.trim(); if (q) params.q = q;
       const w = $('#adhWilaya').value; if (w) params.wilaya = w;
-      const t = $('#adhType').value; if (t) params.type = t;
-      renderAdhTable(await API.adherents(params));
-      updateBulkButton(); // Réinitialise l'état du bouton après chargement
+      if (isBureau) {
+        params.type = 'BE';
+      } else {
+        const t = $('#adhType').value; if (t) params.type = t;
+      }
+      const members = await API.adherents(params);
+      renderMembersTable(members, { mode, reload: load });
+      if (!isBureau && $('#adhNotifZone')) {
+        const alerts = collectExpirationAlerts(members);
+        $('#adhNotifZone').innerHTML = renderAdhesionNotifications(alerts, { showTitle: true });
+        bindAdhesionNotifications(alerts, load);
+      }
+      updateBulkButton();
     }
 
-    // Gestion du bouton de suppression en masse
     function updateBulkButton() {
       const checkedBoxes = document.querySelectorAll('.adh-checkbox:checked');
       const bulkBtn = $('#bulkDeleteAdhBtn');
       const bulkCount = $('#bulkAdhCount');
-      
       if (checkedBoxes.length > 0) {
         bulkCount.textContent = checkedBoxes.length;
         bulkBtn.style.display = 'inline-block';
@@ -404,16 +621,13 @@ const Views = (() => {
       }
     }
 
-    // Clic sur la suppression groupée
     $('#bulkDeleteAdhBtn').onclick = () => {
       const checkedBoxes = document.querySelectorAll('.adh-checkbox:checked');
       const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
-
-      confirm(`Supprimer définitivement ces ${idsToDelete.length} adhérents ?`, async () => {
+      confirm(`Supprimer définitivement ces ${idsToDelete.length} fiche(s) ?`, async () => {
         try {
-          // Supprime tous les adhérents sélectionnés en parallèle
           await Promise.all(idsToDelete.map(id => API.deleteAdherent(id)));
-          toast(`${idsToDelete.length} adhérents supprimés avec succès.`);
+          toast(`${idsToDelete.length} fiche(s) supprimée(s) avec succès.`);
           load();
         } catch (err) {
           toast('Erreur lors de la suppression groupée : ' + err.message, 'error');
@@ -421,139 +635,200 @@ const Views = (() => {
       });
     };
 
-    // Écouteur global sur le conteneur pour mettre à jour le compteur en temps réel
     c.addEventListener('change', (e) => {
-      if (e.target.classList.contains('adh-checkbox') || e.target.id === 'selectAllAdh') {
-        updateBulkButton();
-      }
+      if (e.target.classList.contains('adh-checkbox') || e.target.id === 'selectAllAdh') updateBulkButton();
     });
 
     let timer;
     $('#adhSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(load, 280); };
     $('#adhWilaya').onchange = load;
-    $('#adhType').onchange = load;
+    if (!isBureau) $('#adhType').onchange = load;
     $('#refreshAdhBtn').onclick = () => { load(); toast('Liste actualisée.'); };
-    $('#addAdhBtn').onclick = () => { id: adherentForm(null, load) };
+    $('#addAdhBtn').onclick = () => adherentForm(isBureau ? { type_code: 'BE', niveau: 'Bureau exécutif' } : null, load);
     load();
   }
 
+  function renderMembersTable(list, { mode = 'adherents', reload } = {}) {
+    const isBureau = mode === 'bureau';
+    const t = $('#adhTable');
+    if (!list.length) {
+      t.innerHTML = UI.emptyState(isBureau ? '🏛️' : '👤', isBureau ? 'Aucun membre du Bureau exécutif trouvé.' : 'Aucun adhérent trouvé.');
+      return;
+    }
 
-  function renderAdhTable(list) {
-  const t = $('#adhTable');
-  if (!list.length) { t.innerHTML = UI.emptyState('👤', 'Aucun adhérent trouvé.'); return; }
-  
-  t.innerHTML = `<div class="table-wrap"><table class="data">
-    <thead><tr>
-      <th width="40"><input type="checkbox" id="selectAllAdh" /></th>
-      <th>Matricule</th><th>Nom & Prénom</th><th>Téléphone</th><th>Wilaya</th><th>Type</th><th>Adhésion</th><th></th>
-    </tr></thead><tbody>
-    ${list.map((a) => `<tr>
-      <td><input type="checkbox" class="adh-checkbox" value="${a.id}" /></td>
-      <td>
-        <span class="mono" style="font-weight:bold; color:var(--gold); font-size: 13px;">
-          ${esc(a.matricule || '—')}
-        </span>
-      </td>
-      <td class="cell-strong">${esc(a.prenom)} ${esc(a.nom)}</td>
-      <td>${esc(a.telephone || '—')}</td>
-      <td>${esc(a.wilaya_nom)}</td>
-      <td>${UI.typeTag(a.type_libelle)}</td>
-      <td class="muted">${esc(fmtDate(a.date_adhesion))}</td>
-      <td><div class="row-actions">
-        <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
-        <button class="btn btn-dark btn-sm" data-edit="${a.id}">✎</button>
-        <button class="btn btn-danger btn-sm" data-del="${a.id}">✕</button>
-      </div></td>
-    </tr>`).join('')}
-    </tbody></table></div>`;
+    t.innerHTML = `<div class="table-wrap"><table class="data">
+      <thead><tr>
+        <th width="40"><input type="checkbox" id="selectAllAdh" /></th>
+        <th>Matricule</th>
+        <th>Nom & Prénom</th>
+        <th>${isBureau ? 'Badge spécial' : 'Téléphone'}</th>
+        <th>${isBureau ? 'Type badge' : 'Wilaya'}</th>
+        <th>${isBureau ? 'Wilaya' : 'Type'}</th>
+        <th>${isBureau ? 'Adhésion' : 'Étoiles'}</th>
+        <th>${isBureau ? '' : 'Fin adhésion'}</th>
+        <th></th>
+      </tr></thead><tbody>
+      ${list.map((a) => {
+        const expiry = !isBureau ? getExpirationInfo(a) : null;
+        const expiryHtml = !isBureau
+          ? (expiry
+              ? `<div style="font-weight:600;color:${expiry.isExpired ? '#dc2626' : expiry.isSoon ? '#d97706' : 'var(--text)'}">${esc(expiry.expirationText)}</div><div class="muted" style="font-size:11px">${expiry.isExpired ? 'Expirée' : expiry.isSoon ? `Expire dans ${expiry.daysLeft} jour${expiry.daysLeft > 1 ? 's' : ''}` : 'Valide'}</div>`
+              : '<span class="muted">—</span>')
+          : '';
+        return `<tr>
+        <td><input type="checkbox" class="adh-checkbox" value="${a.id}" /></td>
+        <td><span class="mono" style="font-weight:bold; color:var(--gold); font-size:13px;">${esc(a.matricule || '—')}</span></td>
+        <td class="cell-strong">${esc((a.prenom || '').trim() || '—')} ${esc((a.nom || '').trim() || '')}</td>
+        <td>${isBureau ? specialBadge() : esc(a.telephone || '—')}</td>
+        <td>${isBureau ? esc(a.bureau_badge_type || '—') : esc(a.wilaya_nom || '—')}</td>
+        <td>${isBureau ? esc(a.wilaya_nom || '—') : UI.typeTag(a.type_libelle || '—')}</td>
+        <td>${isBureau ? `<span class="muted">${esc(fmtDate(a.date_adhesion))}</span>` : renderStars(a.etoiles)}</td>
+        <td>${isBureau ? '' : expiryHtml}</td>
+        <td><div class="row-actions">
+          <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
+          ${isBureau ? '' : `<button class="btn btn-gold btn-sm" data-renew="${a.id}">Renouveler</button>`}
+          <button class="btn btn-dark btn-sm" data-edit="${a.id}">✎</button>
+          <button class="btn btn-danger btn-sm" data-del="${a.id}">✕</button>
+        </div></td>
+      </tr>`;}).join('')}
+      </tbody></table></div>`;
 
-  // --- LOGIQUE DE SÉLECTION & SUPPRESSION GROUPÉE ---
-  const selectAll = $('#selectAllAdh');
-  const checkboxes = t.querySelectorAll('.adh-checkbox');
-  const bulkBtn = $('#bulkDeleteAdhBtn'); // Le bouton qui est dans ta toolbar
-  const countSpan = $('#bulkAdhCount');
+    const selectAll = $('#selectAllAdh');
+    const checkboxes = t.querySelectorAll('.adh-checkbox');
+    const bulkBtn = $('#bulkDeleteAdhBtn');
+    const countSpan = $('#bulkAdhCount');
 
-  function updateBulkBtn() {
-    const checkedCount = t.querySelectorAll('.adh-checkbox:checked').length;
-    countSpan.textContent = checkedCount;
-    bulkBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
-    selectAll.checked = checkedCount === checkboxes.length && checkboxes.length > 0;
+    function updateBulkBtn() {
+      const checkedCount = t.querySelectorAll('.adh-checkbox:checked').length;
+      countSpan.textContent = checkedCount;
+      bulkBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+      selectAll.checked = checkedCount === checkboxes.length && checkboxes.length > 0;
+    }
+
+    selectAll.onchange = () => {
+      checkboxes.forEach(cb => cb.checked = selectAll.checked);
+      updateBulkBtn();
+    };
+    checkboxes.forEach(cb => cb.onchange = updateBulkBtn);
+
+    t.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => adherentDetail(b.dataset.view, reload));
+    t.querySelectorAll('[data-renew]').forEach((b) => b.onclick = async () => {
+      const current = await API.adherent(b.dataset.renew);
+      const today = new Date().toISOString().slice(0, 10);
+      adherentForm({ ...current, date_adhesion: today, __renewal: true }, reload);
+      setTimeout(() => $('#fDate')?.focus(), 30);
+    });
+    t.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => adherentForm(await API.adherent(b.dataset.edit), reload));
+    t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+      confirm('Supprimer définitivement cette fiche ?', async () => {
+        await API.deleteAdherent(b.dataset.del);
+        toast('Fiche supprimée.');
+        reload && reload();
+      });
+    });
   }
 
-  selectAll.onchange = () => {
-    checkboxes.forEach(cb => cb.checked = selectAll.checked);
-    updateBulkBtn();
-  };
-
-  checkboxes.forEach(cb => cb.onchange = updateBulkBtn);
-
-  // Action du bouton de suppression groupée
-  bulkBtn.onclick = () => {
-    const ids = Array.from(t.querySelectorAll('.adh-checkbox:checked')).map(cb => cb.value);
-    confirm(`Supprimer définitivement les ${ids.length} adhérents sélectionnés ?`, async () => {
-      toast('Suppression en cours...', 'info');
-      // Assure-toi que API.deleteGroupedAdherents est bien défini dans ton fichier api.js
-      await API.deleteGroupedAdherents(ids); 
-      toast('Adhérents supprimés.');
-      adherentsList(); // Recharge la liste
-    });
-  };
-
-  // --- AUTRES ACTIONS ---
-  t.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => adherentDetail(b.dataset.view));
-  t.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => {
-    adherentForm(await API.adherent(b.dataset.edit), adherentsList);
-  });
-  t.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
-    confirm('Supprimer définitivement cet adhérent ?', async () => {
-      await API.deleteAdherent(b.dataset.del); toast('Adhérent supprimé.'); adherentsList();
-    });
-  });
-}
   /* ----- Formulaire adhérent ----- */
   function adherentForm(adh, onDone) {
-    const isEdit = !!adh;
+    const isEdit = !!adh?.id;
+    const isRenewal = !!adh?.__renewal;
     const today = new Date().toISOString().slice(0, 10);
     const currTypeCode = adh?.type_code || 'AD';
-    const currNiveau = adh?.niveau || 'Adhérent Simple';
+    const currNiveau = adh?.niveau || (currTypeCode === 'BE' ? 'Bureau exécutif' : 'Adhérent Simple');
+    const currPaiementMode = (adh?.paiement_mode || '').toLowerCase();
+    const currPaiementRef = adh?.paiement_ref || '';
+    const currPaiementBanque = adh?.paiement_banque || '';
+    const currEtoiles = Number.parseInt(adh?.etoiles, 10) || 0;
+    const currBureauCode = adh?.bureau_code || '';
+    const currBadgeType = adh?.bureau_badge_type || '';
+    const currCarteRemise = Number.parseInt(adh?.carte_remise, 10) === 1;
+    const allowBE = canAccessBE();
 
-    openModal(isEdit ? "Modifier l'adhérent" : 'Nouvel adhérent', `
+    openModal(isRenewal ? "Renouveler l'adhésion" : (isEdit ? "Modifier l'adhérent" : 'Nouvelle fiche'), `
       <form id="adhForm">
+        ${isRenewal ? `<div style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8">Modifiez la date d'adhésion puis enregistrez. Vous pouvez aussi ajuster les autres champs si nécessaire.</div>` : ''}
         <div class="form-grid">
-          <div class="field"><label>Nom *</label><input name="nom" value="${esc(adh?.nom || '')}" required /></div>
-          <div class="field"><label>Prénom *</label><input name="prenom" value="${esc(adh?.prenom || '')}" required /></div>
-          <div class="field"><label>الاسم العائلي (Nom en arabe) *</label><input name="nom_ar" dir="rtl" value="${esc(adh?.nom_ar || '')}" required /></div>
-          <div class="field"><label>الاسم الشخصي (Prénom en arabe) *</label><input name="prenom_ar" dir="rtl" value="${esc(adh?.prenom_ar || '')}" required /></div>
-          <div class="field"><label>Téléphone *</label><input name="telephone" value="${esc(adh?.telephone || '')}" required placeholder="05XXXXXXXX" /></div>
-          <div class="field"><label>NIN * (18 chiffres)</label><input name="nin" value="${esc(adh?.nin || '')}" required maxlength="18" pattern="[0-9]{18}" placeholder="18 chiffres" /></div>
-          <div class="field"><label>Type de document *</label><select name="doc_type" id="fDocType" required>${docTypeOptions(adh?.doc_type || 'RC')}</select></div>
-          <div class="field"><label>Numéro du document *</label><input name="doc_numero" id="fDocNum" value="${esc(adh?.doc_numero || '')}" required />
+          <div class="field"><label>Nom</label><input name="nom" value="${esc(adh?.nom || '')}" /></div>
+          <div class="field"><label>Prénom</label><input name="prenom" value="${esc(adh?.prenom || '')}" /></div>
+          <div class="field"><label>الاسم العائلي (Nom en arabe)</label><input name="nom_ar" dir="rtl" value="${esc(adh?.nom_ar || '')}" /></div>
+          <div class="field"><label>الاسم الشخصي (Prénom en arabe)</label><input name="prenom_ar" dir="rtl" value="${esc(adh?.prenom_ar || '')}" /></div>
+          <div class="field"><label>Téléphone</label><input name="telephone" value="${esc(adh?.telephone || '')}" placeholder="05XXXXXXXX" /></div>
+          <div class="field"><label>NIN (18 chiffres)</label><input name="nin" value="${esc(adh?.nin || '')}" maxlength="18" pattern="[0-9]{18}" placeholder="18 chiffres" /></div>
+          <div class="field"><label>Type de document</label><select name="doc_type" id="fDocType">${docTypeOptions(adh?.doc_type || 'RC')}</select></div>
+          <div class="field"><label>Numéro du document</label><input name="doc_numero" id="fDocNum" value="${esc(adh?.doc_numero || '')}" />
             <small class="muted" id="docHint"></small></div>
-          <div class="field"><label>Wilaya *</label><select name="wilaya_code" id="fWilaya" required>${wilayaOptions(adh?.wilaya_code || '16')}</select></div>
+          <div class="field"><label>Wilaya</label><select name="wilaya_code" id="fWilaya">${wilayaOptions(adh?.wilaya_code || '16')}</select></div>
           <div class="field">
-            <label>Type d'adhérent *</label>
-            <select id="fTypeSelect" required>
+            <label>Type de membre</label>
+            <select id="fTypeSelect">
               <option value="Adhérent Simple" data-code="AD" ${currTypeCode === 'AD' && !currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent simple (AD)</option>
               <option value="Adhérent Gold" data-code="AD" ${currTypeCode === 'AD' && currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent gold (AD)</option>
               <option value="Membre Actif" data-code="MA" ${currTypeCode === 'MA' ? 'selected' : ''}>Membre Actif (MA)</option>
               <option value="Conseiller" data-code="CR" ${currTypeCode === 'CR' ? 'selected' : ''}>Conseiller (CR)</option>
+              ${allowBE ? `<option value="Bureau exécutif" data-code="BE" ${currTypeCode === 'BE' ? 'selected' : ''}>Bureau exécutif (BE)</option>` : ''}
             </select>
             <input type="hidden" name="type_code" id="fTypeCode" value="${esc(currTypeCode)}" />
             <input type="hidden" name="niveau" id="fNiveau" value="${esc(currNiveau)}" />
           </div>
-          <div class="field"><label>Date d'adhésion *</label><input type="date" name="date_adhesion" id="fDate" value="${esc(adh ? fmtDate(adh.date_adhesion) : today)}" required /></div>
+          <div class="field"><label>Date d'adhésion</label><input type="date" name="date_adhesion" id="fDate" value="${esc(adh?.date_adhesion ? fmtDate(adh.date_adhesion) : '')}" /></div>
           <div class="field"><label>Année (auto)</label><input id="fAnnee" value="${adh?.annee || new Date(today).getFullYear()}" disabled /></div>
           <div class="field"><label>Photo</label><input type="file" name="photo" accept="image/*" /></div>
+          <div class="field" style="display:flex;align-items:end">
+            <label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer">
+              <input type="checkbox" name="carte_remise" value="1" ${currCarteRemise ? 'checked' : ''} />
+              <span>Carte remise</span>
+            </label>
+          </div>
+
+          <div class="field" id="fBureauCodeWrap">
+            <label>Code Bureau exécutif (3 caractères) *</label>
+            <input name="bureau_code" id="fBureauCode" value="${esc(currBureauCode)}" maxlength="3" placeholder="ABC" />
+          </div>
+          <div class="field" id="fBadgeTypeWrap">
+            <label>Type affiché sur badge *</label>
+            <input name="bureau_badge_type" id="fBadgeType" value="${esc(currBadgeType)}"  />
+          </div>
+
+          <div class="field" id="fEtoilesWrap">
+            <label>Classement étoiles</label>
+            <select name="etoiles" id="fEtoiles">
+              <option value="0" ${currEtoiles === 0 ? 'selected' : ''}>0 étoile</option>
+              <option value="1" ${currEtoiles === 1 ? 'selected' : ''}>1 étoile</option>
+              <option value="2" ${currEtoiles === 2 ? 'selected' : ''}>2 étoiles</option>
+              <option value="3" ${currEtoiles === 3 ? 'selected' : ''}>3 étoiles</option>
+            </select>
+          </div>
+
+          <div class="field full">
+            <label>Mode de paiement</label>
+            <div style="display:flex;gap:18px;flex-wrap:wrap;padding:10px 0 4px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="" ${!currPaiementMode ? 'checked' : ''} /> Non renseigné</label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="cheque" ${currPaiementMode === 'cheque' ? 'checked' : ''} /> Chèque</label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="espece" ${currPaiementMode === 'espece' ? 'checked' : ''} /> Espèce</label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="virement" ${currPaiementMode === 'virement' ? 'checked' : ''} /> Virement</label>
+            </div>
+          </div>
+
+          <div class="field" id="fPaiementRefWrap">
+            <label id="fPaiementRefLabel">Référence</label>
+            <input name="paiement_ref" id="fPaiementRef" value="${esc(currPaiementRef)}" />
+            <small class="muted" id="fPaiementRefHint"></small>
+          </div>
+          <div class="field" id="fPaiementBanqueWrap">
+            <label id="fPaiementBanqueLabel">Banque</label>
+            <input name="paiement_banque" id="fPaiementBanque" value="${esc(currPaiementBanque)}" />
+          </div>
+
           <div class="field full"><label>Description / Notes</label><textarea name="description" rows="3" placeholder="Informations complémentaires, observations…" style="resize:vertical">${esc(adh?.description || '')}</textarea></div>
         </div>
         <div class="field full" style="margin-top:6px">
-          <label>Matricule (généré automatiquement)</label>
+          <label>Matricule :</label>
           <div class="matricule-preview" id="matPreview">${esc(adh?.matricule || '…')}</div>
         </div>
         <div class="form-error" id="adhFormErr"></div>
         <div class="modal-foot">
           <button type="button" class="btn btn-ghost" id="adhCancel">Annuler</button>
-          <button type="submit" class="btn btn-gold">${isEdit ? 'Enregistrer' : "Créer l'adhérent"}</button>
+          <button type="submit" class="btn btn-gold">${isEdit ? 'Enregistrer' : 'Créer la fiche'}</button>
         </div>
       </form>`, true);
 
@@ -563,32 +838,119 @@ const Views = (() => {
       const min = +opt.dataset.min, max = +opt.dataset.max;
       const input = $('#fDocNum');
       input.maxLength = max;
-      $('#docHint').textContent = (min === max)
-        ? `Exactement ${min} caractères.`
-        : `Entre ${min} et ${max} caractères.`;
+      $('#docHint').textContent = (min === max) ? `Exactement ${min} caractères.` : `Entre ${min} et ${max} caractères.`;
     }
+
+    function updateMemberTypeFields() {
+      if (isSaisieOnly() && $('#fTypeCode').value === 'BE') {
+        $('#fTypeCode').value = 'AD';
+        $('#fNiveau').value = 'Adhérent Simple';
+      }
+      const typeCode = $('#fTypeCode').value;
+      const isBE = typeCode === 'BE';
+      $('#fBureauCodeWrap').style.display = isBE ? '' : 'none';
+      $('#fBadgeTypeWrap').style.display = isBE ? '' : 'none';
+      $('#fEtoilesWrap').style.display = isBE ? 'none' : '';
+      $('#fBureauCode').required = isBE;
+      $('#fBadgeType').required = isBE;
+      if (isBE) {
+        $('#fNiveau').value = 'Bureau exécutif';
+        $('#fEtoiles').value = '0';
+      } else if ($('#fTypeSelect').value) {
+        $('#fNiveau').value = $('#fTypeSelect').value;
+      }
+    }
+
+    function updatePaiementFields() {
+      const mode = document.querySelector('input[name="paiement_mode"]:checked')?.value || '';
+      const refWrap = $('#fPaiementRefWrap');
+      const bankWrap = $('#fPaiementBanqueWrap');
+      const refInput = $('#fPaiementRef');
+      const bankInput = $('#fPaiementBanque');
+      const refLabel = $('#fPaiementRefLabel');
+      const bankLabel = $('#fPaiementBanqueLabel');
+      const refHint = $('#fPaiementRefHint');
+
+      refInput.minLength = 0;
+      refInput.maxLength = 524288;
+      refInput.removeAttribute('pattern');
+      refInput.removeAttribute('inputmode');
+      refHint.textContent = '';
+
+      if (mode === 'cheque') {
+        refWrap.style.display = '';
+        bankWrap.style.display = '';
+        refLabel.textContent = 'Numéro de chèque *';
+        bankLabel.textContent = 'Banque *';
+        refInput.placeholder = '7 chiffres';
+        bankInput.placeholder = 'Nom de la banque';
+        refInput.required = true;
+        bankInput.required = true;
+        refInput.minLength = 7;
+        refInput.maxLength = 7;
+        refInput.setAttribute('pattern', '[0-9]{7}');
+        refInput.setAttribute('inputmode', 'numeric');
+        refHint.textContent = 'Le numéro de chèque doit contenir exactement 7 chiffres.';
+      } else if (mode === 'virement') {
+        refWrap.style.display = 'none';
+        bankWrap.style.display = '';
+        bankLabel.textContent = 'Information virement *';
+        bankInput.placeholder = "L'admin écrit ce qu'il veut : CCP, banque, détail...";
+        refInput.required = false;
+        bankInput.required = true;
+        refInput.value = '';
+      } else if (mode === 'espece') {
+        refWrap.style.display = 'none';
+        bankWrap.style.display = 'none';
+        refInput.required = false;
+        bankInput.required = false;
+        refInput.value = '';
+        bankInput.value = '';
+      } else {
+        refWrap.style.display = 'none';
+        bankWrap.style.display = 'none';
+        refInput.required = false;
+        bankInput.required = false;
+        refInput.value = '';
+        bankInput.value = '';
+      }
+    }
+
     async function refreshMatricule() {
-      const w = $('#fWilaya').value, t = $('#fTypeCode').value;
+      const w = $('#fWilaya').value;
+      const t = $('#fTypeCode').value;
+      const bureauCode = ($('#fBureauCode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
       const an = $('#fDate').value ? new Date($('#fDate').value).getFullYear() : new Date().getFullYear();
       $('#fAnnee').value = an;
+      if (t === 'BE' && bureauCode.length < 3) {
+        $('#matPreview').textContent = 'veuillez saisir le code adherent BE';
+        return;
+      }
       try {
-        const r = await API.previewMatricule(w, t, an);
-        if (r && r.matricule) {
-          $('#matPreview').textContent = r.matricule + (isEdit ? '  (recalculé si modifié)' : '');
-        }
+        const r = await API.previewMatricule(w, t, an, bureauCode);
+        if (r && r.matricule) $('#matPreview').textContent = r.matricule ;
       } catch {}
     }
+
     $('#fDocType').onchange = updateDocHint;
     $('#fWilaya').onchange = refreshMatricule;
     $('#fTypeSelect').onchange = () => {
       const opt = $('#fTypeSelect').options[$('#fTypeSelect').selectedIndex];
       $('#fTypeCode').value = opt.dataset.code;
       $('#fNiveau').value = opt.value;
+      updateMemberTypeFields();
       refreshMatricule();
     };
+    $('#fBureauCode').oninput = (e) => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+      refreshMatricule();
+    };
+    document.querySelectorAll('input[name="paiement_mode"]').forEach((el) => el.onchange = updatePaiementFields);
     $('#fDate').onchange = refreshMatricule;
     updateDocHint();
-    if (!isEdit) refreshMatricule();
+    updateMemberTypeFields();
+    updatePaiementFields();
+    refreshMatricule();
 
     $('#adhCancel').onclick = closeModal;
     $('#adhForm').onsubmit = async (e) => {
@@ -596,25 +958,37 @@ const Views = (() => {
       $('#adhFormErr').textContent = '';
       const fd = new FormData(e.target);
       try {
-        if (isEdit) { await API.updateAdherent(adh.id, fd); toast('Adhérent mis à jour.'); }
-        else { const r = await API.createAdherent(fd); toast('Adhérent créé : ' + r.adherent.matricule); }
+        let saved = null;
+        if (isEdit) {
+          saved = await API.updateAdherent(adh.id, fd);
+          toast(isRenewal ? 'Adhésion renouvelée.' : 'Fiche mise à jour.');
+        } else {
+          saved = await API.createAdherent(fd);
+          toast('Fiche créée : ' + saved.adherent.matricule);
+        }
         closeModal();
-        onDone && onDone();
-      } catch (err) { $('#adhFormErr').textContent = err.message; }
+        if (saved?.adherent?.type_code === 'BE') bureauExecutifList();
+        else onDone && onDone();
+      } catch (err) {
+        $('#adhFormErr').textContent = err.message;
+      }
     };
   }
 
   /* ----- Détail adhérent ----- */
-  async function adherentDetail(id) {
+  async function adherentDetail(id, onBackList = null) {
     const a = await API.adherent(id);
+    const backTo = onBackList || (a.type_code === 'BE' ? bureauExecutifList : adherentsList);
+    const expiry = a.type_code !== 'BE' ? getExpirationInfo(a) : null;
     openModal('Fiche adhérent', `
       <div class="profile-head">
         <div id="detailPhoto"><div class="profile-photo-ph">${UI.initials(a.prenom, a.nom)}</div></div>
         <div>
-          <h3 style="font-size:20px;color:var(--text)">${esc(a.prenom)} ${esc(a.nom)}</h3>
+          <h3 style="font-size:20px;color:var(--text)">${esc(a.prenom || '')} ${esc(a.nom || '')}</h3>
           ${(a.prenom_ar || a.nom_ar) ? `<div dir="rtl" style="font-size:16px;color:var(--text);margin-top:2px">${esc(a.prenom_ar || '')} ${esc(a.nom_ar || '')}</div>` : ''}
-          <div class="mono" style="margin:6px 0">${esc(a.matricule)}</div>
-          ${UI.typeTag(a.type_libelle)} ${UI.niveauTag(a.niveau)}
+          <div class="mono" style="margin:6px 0">${esc(a.matricule || '—')}</div>
+          ${a.type_code === 'BE' ? specialBadge() : UI.typeTag(a.type_libelle)} ${UI.niveauTag(a.niveau || '—')}
+          ${a.type_code !== 'BE' ? `<div style="margin-top:8px">${renderStars(a.etoiles)}</div>` : ''}
         </div>
       </div>
       <div class="detail-grid">
@@ -624,18 +998,22 @@ const Views = (() => {
         ${detailItem('Prénom (Arabe)', a.prenom_ar || '—')}
         ${detailItem('Téléphone', a.telephone || '—')}
         ${detailItem('NIN', a.nin || '—')}
-        ${detailItem(a.doc_type_libelle, a.doc_numero || '—')}
-        ${detailItem('Wilaya', a.wilaya_nom)}
+        ${detailItem(a.doc_type_libelle || 'Document', a.doc_numero || '—')}
+        ${detailItem('Wilaya', a.wilaya_nom || '—')}
         ${detailItem("Date d'adhésion", fmtDate(a.date_adhesion))}
-        ${detailItem('Année', a.annee)}
+        ${a.type_code === 'BE' ? '' : detailItem("Fin d'adhésion", expiry ? expiry.expirationText : '—')}
+        ${detailItem('Année', a.annee || '—')}
+        ${detailItem('Carte', Number.parseInt(a.carte_remise, 10) === 1 ? 'Remise' : 'Non remise')}
+        ${a.type_code === 'BE' ? detailItem('Code BE', a.bureau_code || '—') : detailItem('Étoiles', `${a.etoiles ?? 0} / 3`)}
+        ${a.type_code === 'BE' ? detailItem('Type badge', a.bureau_badge_type || '—') : detailItem('Mode de paiement', paiementLabel(a.paiement_mode) || '—')}
+        ${a.type_code === 'BE' ? detailItem('Mode de paiement', paiementLabel(a.paiement_mode) || '—') : detailItem('Référence paiement', a.paiement_ref || '—')}
+        ${detailItem('Banque / CCP', a.paiement_banque || '—')}
       </div>
-      ${a.description ? `<div class="panel" style="margin-top:14px">
-        <div class="panel-head"><h3>📝 Description / Notes</h3></div>
-        <div style="line-height:1.6;white-space:pre-wrap">${esc(a.description)}</div>
-      </div>` : ''}
+      ${a.description ? `<div class="panel" style="margin-top:14px"><div class="panel-head"><h3>📝 Description / Notes</h3></div><div style="line-height:1.6;white-space:pre-wrap">${esc(a.description)}</div></div>` : ''}
       <div class="modal-foot">
         <button class="btn btn-ghost" id="dDossier">📄 Dossier à remplir</button>
         <button class="btn btn-ghost" id="dCarte">📇 Carte (recto/verso)</button>
+        ${a.type_code !== 'BE' ? '<button class="btn btn-gold" id="dRenew">↻ Renouveler</button>' : ''}
         <button class="btn btn-dark" id="dEdit">✎ Modifier</button>
         <button class="btn btn-gold" id="dClose">Fermer</button>
       </div>`, true);
@@ -644,7 +1022,11 @@ const Views = (() => {
     $('#dClose').onclick = closeModal;
     $('#dDossier').onclick = () => downloadDossier(a.id);
     $('#dCarte').onclick = () => downloadCarte(a.id, a.matricule);
-    $('#dEdit').onclick = () => adherentForm(a, () => { closeModal(); adherentsList(); });
+    if ($('#dRenew')) $('#dRenew').onclick = () => {
+      const today = new Date().toISOString().slice(0, 10);
+      adherentForm({ ...a, date_adhesion: today, __renewal: true }, () => { closeModal(); backTo(); });
+    };
+    $('#dEdit').onclick = () => adherentForm(a, () => { closeModal(); backTo(); });
   }
 
   function detailItem(lbl, val) {
@@ -669,8 +1051,8 @@ const Views = (() => {
 
   async function demandesList() {
     const c = container();
-    if (!['admin', 'president'].includes(ROLE)) {
-      c.innerHTML = UI.emptyState('🔒', 'Accès réservé au Président et à l\'Administrateur.');
+    if (!canViewDemandes()) {
+      c.innerHTML = UI.emptyState('🔒', 'Accès réservé aux comptes autorisés à consulter les demandes.');
       return;
     }
     const types = (REF.typesDemande || []);
@@ -769,8 +1151,8 @@ const Views = (() => {
         <td class="muted">${esc((d.created_at || '').replace('T', ' ').slice(0, 16))}</td>
         <td>${UI.statutTag(d.statut)}</td>
         <td><div class="row-actions">
-          <button class="btn btn-dark btn-sm" data-view="${d.id}">Traiter</button>
-          <button class="btn btn-danger btn-sm" data-del="${d.id}">✕</button>
+          <button class="btn btn-dark btn-sm" data-view="${d.id}">${canEditDemandes() ? 'Traiter' : 'Voir'}</button>
+          ${canEditDemandes() ? `<button class="btn btn-danger btn-sm" data-del="${d.id}">✕</button>` : ''}
         </div></td>
       </tr>`).join('')}
       </tbody></table></div>`;
@@ -816,15 +1198,15 @@ const Views = (() => {
       <div style="margin-top:14px"><div class="d-lbl" style="margin-bottom:8px">Pièces jointes</div>${piecesHtml}</div>
       
       <div class="panel" style="margin-top:18px">
-        <div class="panel-head"><h3>Traitement</h3></div>
+        <div class="panel-head"><h3>${canEditDemandes() ? 'Traitement' : 'Consultation'}</h3></div>
         <div class="form-grid">
-          <div class="field"><label>Statut</label><select id="dStatut">${REF.statutsDemande.map((s) => `<option ${s === d.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
-          <div class="field"><label>Priorité</label><select id="dPriorite">${REF.priorites.map((p) => `<option ${p === d.priorite ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+          <div class="field"><label>Statut</label><select id="dStatut" ${canEditDemandes() ? '' : 'disabled'}>${REF.statutsDemande.map((s) => `<option ${s === d.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+          <div class="field"><label>Priorité</label><select id="dPriorite" ${canEditDemandes() ? '' : 'disabled'}>${REF.priorites.map((p) => `<option ${p === d.priorite ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
         </div>
-        <div style="text-align:right;margin-top:10px"><button class="btn btn-gold" id="demSave">Enregistrer le traitement</button></div>
+        ${canEditDemandes() ? '<div style="text-align:right;margin-top:10px"><button class="btn btn-gold" id="demSave">Enregistrer le traitement</button></div>' : '<div class="muted" style="margin-top:10px">Ce compte peut consulter les demandes sans les modifier.</div>'}
       </div>
       <div class="modal-foot">
-        ${d.statut !== 'Clôturée' ? '<button class="btn btn-dark" id="demCloturer">Clôturer</button>' : ''}
+        ${canEditDemandes() && d.statut !== 'Clôturée' ? '<button class="btn btn-dark" id="demCloturer">Clôturer</button>' : ''}
         <button class="btn btn-gold" id="demClose">Fermer</button>
       </div>`, true);
 
@@ -843,24 +1225,31 @@ const Views = (() => {
       };
     }
 
-    $('#demSave').onclick = async () => {
-      try {
-        await API.updateDemande(d.id, {
-          statut: $('#dStatut').value, 
-          priorite: $('#dPriorite').value
-        });
-        toast('Demande mise à jour avec succès.'); 
-        closeModal(); 
-        demandesList();
-      } catch (err) {
-        toast('Erreur lors de la mise à jour : ' + err.message, 'error');
-      }
-    };
+    if ($('#demSave')) {
+      $('#demSave').onclick = async () => {
+        try {
+          await API.updateDemande(d.id, {
+            statut: $('#dStatut').value, 
+            priorite: $('#dPriorite').value
+          });
+          toast('Demande mise à jour avec succès.'); 
+          closeModal(); 
+          demandesList();
+        } catch (err) {
+          toast('Erreur lors de la mise à jour : ' + err.message, 'error');
+        }
+      };
+    }
   }
 
 /* ============ GESTION DOCUMENTAIRE (SUPPRESSION PAR ADHERENT_ID) ============ */
 async function documentsList() {
   const c = container();
+  if (!canViewDocuments()) {
+    c.innerHTML = UI.emptyState('🔒', 'Accès réservé aux comptes autorisés à consulter les documents.');
+    return;
+  }
+  const readOnlyDocs = !(ROLE === 'admin' || ROLE === 'president');
   c.innerHTML = `
     <div class="toolbar" style="flex-wrap: wrap; gap: 10px; align-items: center;">
       <input type="search" id="docSearch" placeholder="Rechercher (nom, prénom, matricule)…" />
@@ -870,9 +1259,9 @@ async function documentsList() {
       </select>
       <button class="btn btn-dark" id="refreshDocsBtn" title="Rafraîchir">⟳</button>
       
-      <button class="btn btn-danger" id="deleteBulkBtn" style="display: none; margin-left: auto;">
+      ${readOnlyDocs ? '' : `<button class="btn btn-danger" id="deleteBulkBtn" style="display: none; margin-left: auto;">
         ✕ Supprimer la sélection (<span id="selectedCount">0</span>)
-      </button>
+      </button>`}
     </div>
     <div id="docTable"><div class="muted">Chargement de la liste des adhérents…</div></div>`;
 
@@ -929,12 +1318,10 @@ async function documentsList() {
                   <td class="muted">${hasFile ? dateAffichage : '—'}</td>
                   <td>
                     <div class="row-actions" style="justify-content: flex-end; gap:8px;">
-                      <input type="file" id="fileInput-${a.adherent_id}" style="display:none;" accept=".pdf" multiple />
-                      
+                      ${readOnlyDocs ? '' : `<input type="file" id="fileInput-${a.adherent_id}" style="display:none;" accept=".pdf" multiple />
                       <button class="btn btn-dark btn-sm" onclick="document.getElementById('fileInput-${a.adherent_id}').click()">
                         📎 Fusionner
-                      </button>
-                      
+                      </button>`}
                       <button class="btn btn-gold btn-sm" data-file="${esc(a.filename || '')}" ${!hasFile ? 'disabled style="opacity:0.5;"' : ''}>
                         👁 Ouvrir
                       </button>
@@ -952,6 +1339,7 @@ async function documentsList() {
     const countSpan = $('#selectedCount');
 
     function updateBulkButtonVisibility() {
+      if (!bulkBtn || !countSpan) return;
       const checkedBoxes = t.querySelectorAll('.doc-checkbox:checked');
       countSpan.textContent = checkedBoxes.length;
       bulkBtn.style.display = checkedBoxes.length > 0 ? 'inline-block' : 'none';
@@ -973,7 +1361,7 @@ async function documentsList() {
     });
 
     // --- EVENEMENT : SUPPRESSION GROUPÉE SIMPLIFIÉE & SÉCURISÉE ---
-    bulkBtn.onclick = () => {
+    if (bulkBtn) bulkBtn.onclick = () => {
       const checkedBoxes = t.querySelectorAll('.doc-checkbox:checked');
       const idsToDelete = Array.from(checkedBoxes).map(cb => cb.value);
       
@@ -982,16 +1370,10 @@ async function documentsList() {
       confirm(`Détacher et supprimer définitivement les fichiers fusionnés pour ces ${idsToDelete.length} adhérent(s) ?`, async () => {
         try {
           toast('Suppression en cours...', 'info');
-          
-          // L'appel à l'API va lever une exception automatiquement si le serveur renvoie un code 500 ou 400
           await API.deleteGroupedDocuments(idsToDelete);
-          
-          // Si on arrive ici, c'est que la requête s'est déroulée sans erreur (Statut 200/204)
           toast('Dossiers supprimés avec succès.');
-          load(); // Recharge le tableau immédiatement
-          
+          load();
         } catch (err) {
-          // Affiche l'erreur réelle renvoyée par Express si ça échoue
           toast(`Échec de la suppression : ${err.message}`, 'error');
         }
       });
@@ -1042,6 +1424,12 @@ async function documentsList() {
   /* ============ PARAMÈTRES ============ */
   function parametres() {
     const c = container();
+
+    if (isSaisieOnly()) {
+      c.innerHTML = UI.emptyState('🔒', "Ce compte ne peut ni changer son mot de passe ni faire des sauvegardes.");
+      return;
+    }
+
     c.innerHTML = `
       <div class="panel" style="max-width:520px">
         <div class="panel-head"><h3>Changer mon mot de passe</h3></div>
@@ -1057,15 +1445,18 @@ async function documentsList() {
           <h3>Sauvegarde de la base de données</h3>
           <button class="btn btn-gold" id="backupBtn">💾 Sauvegarder maintenant</button>
         </div>
-        <p class="muted" style="margin-bottom:14px">Sauvegarde automatique <b>chaque jeudi à 16h00</b>. Chaque sauvegarde crée un fichier
-          « <b>Sauvegarde bdd opa - DATE</b> » dans le dossier <b>backups/</b> du serveur. Vous pouvez aussi les télécharger ci-dessous.</p>
+        <p class="muted" style="margin-bottom:14px">Une <b>sauvegarde mensuelle automatique</b> est téléchargée quand un administrateur ou le président se connecte sur ce PC pour la première fois du mois. Les sauvegardes serveur restent aussi disponibles ci-dessous.</p>
         <div id="backupMsg" class="muted" style="margin-bottom:12px"></div>
         <div id="backupList"><div class="muted">Chargement des sauvegardes…</div></div>
       </div>`;
     $('#pwForm').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
-      try { await API.changePassword(f.current.value, f.next.value); toast('Mot de passe modifié.'); f.reset(); }
+      try {
+        await API.changePassword(f.current.value, f.next.value);
+        toast('Mot de passe modifié.');
+        f.reset();
+      }
       catch (err) { $('#pwErr').textContent = err.message; }
     };
 
@@ -1083,7 +1474,10 @@ async function documentsList() {
             <td><button class="btn btn-dark btn-sm" data-dl="${esc(b.name)}">⬇ Télécharger</button></td>
           </tr>`).join('')}</tbody></table></div>`;
         el.querySelectorAll('[data-dl]').forEach((btn) => btn.onclick = async () => {
-          try { await API.downloadBackup(btn.dataset.dl); toast('Téléchargement lancé.'); }
+          try {
+            await API.downloadBackup(btn.dataset.dl);
+            toast('Téléchargement lancé.');
+          }
           catch (err) { toast(err.message, 'error'); }
         });
       } catch (err) { $('#backupList').innerHTML = `<p class="form-error">${esc(err.message)}</p>`; }
@@ -1113,7 +1507,7 @@ async function documentsList() {
         <button class="btn btn-gold" id="saisieBtn" style="font-size:15px;padding:13px 26px">➕ Nouvel adhérent</button>
         <div id="saisieRecap" style="margin-top:20px"></div>
       </div>`;
-    $('#saisieBtn').onclick = () => adherentForm(null, () => {
+    $('#saisieBtn').onclick = () => adherentForm({ type_code: 'AD', niveau: 'Adhérent Simple' }, () => {
       $('#saisieRecap').innerHTML = `<div class="muted" style="color:var(--green,#2f9e5e)">✅ Adhérent enregistré avec succès.</div>`;
       setTimeout(() => { $('#saisieRecap').innerHTML = ''; }, 4000);
     });
@@ -1127,14 +1521,21 @@ async function documentsList() {
         <h3 style="flex:1;color:var(--text)">Comptes utilisateurs</h3>
         <button class="btn btn-gold" id="addUserBtn">+ Nouveau compte</button>
       </div>
-      <p class="muted" style="margin:-6px 0 16px">Créez un <b>agent de saisie</b> : il pourra uniquement ajouter des adhérents, sans accès à la liste ni aux demandes.</p>
+      <p class="muted" style="margin:-6px 0 16px">Créez un <b>compte personnalisé</b> et cochez un ou plusieurs accès selon le besoin.</p>
       <div id="usersTable"><div class="muted">Chargement…</div></div>`;
     async function load() {
       const users = await API.users();
       const t = $('#usersTable');
-      const roleLabel = { admin: 'Administrateur', president: 'Président', saisie: 'Agent de saisie' };
+      const roleLabel = { admin: 'Administrateur', president: 'Président', saisie: 'Compte personnalisé' };
+      const permLabel = {
+        adherents_add: 'Ajouter des adhérents',
+        adherents_manage: 'Ajouter et modifier les adhérents',
+        demandes_view: 'Consulter les demandes',
+        demandes_edit: 'Consulter et modifier les demandes',
+        documents_view: 'Consulter les documents des adhérents',
+      };
       t.innerHTML = `<div class="table-wrap"><table class="data">
-        <thead><tr><th>Email</th><th>Rôle</th><th>Créé le</th><th></th></tr></thead>
+        <thead><tr><th>Email</th><th>Rôle</th><th>Accès</th><th>Créé le</th><th></th></tr></thead>
         <tbody>${users.map((u) => {
           const isPresident = u.role === 'president';
           const actions = isPresident
@@ -1143,9 +1544,13 @@ async function documentsList() {
                 <button class="btn btn-dark btn-sm" data-pwd="${u.id}" data-email="${esc(u.email)}">🔑 Mot de passe</button>
                 <button class="btn btn-danger btn-sm" data-del="${u.id}">✕</button>
               </div>`;
+          const access = u.role === 'admin' || u.role === 'president'
+            ? 'Accès complet'
+            : (u.permissions || []).map((p) => permLabel[p] || p).join(' • ');
           return `<tr>
             <td class="cell-strong">${esc(u.email)}</td>
             <td>${esc(roleLabel[u.role] || u.role)}</td>
+            <td>${esc(access || '—')}</td>
             <td class="muted">${esc((u.created_at || '').slice(0,10))}</td>
             <td>${actions}</td>
           </tr>`;
@@ -1172,28 +1577,188 @@ async function documentsList() {
       });
     }
     $('#addUserBtn').onclick = () => {
-      const presidentOption = (ROLE === 'president')
-        ? `<option value="president">Président (accès complet)</option>` : '';
       openModal('Nouveau compte', `
+        <style>
+          .user-access-dropdown {
+            position:relative;
+            width:100%;
+          }
+          .user-access-trigger {
+            width:100%;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            border:1px solid var(--border, #e2e8f0);
+            border-radius:12px;
+            background:var(--card, #fff);
+            color:var(--text);
+            padding:12px 14px;
+            font-size:14px;
+            cursor:pointer;
+            transition:border-color .15s, box-shadow .15s;
+          }
+          .user-access-trigger:hover,
+          .user-access-dropdown.open .user-access-trigger {
+            border-color:var(--gold, #c8a44e);
+            box-shadow:0 0 0 3px rgba(200,164,78,.08);
+          }
+          .user-access-caret {
+            font-size:12px;
+            color:var(--muted,#64748b);
+            transition:transform .15s ease;
+          }
+          .user-access-dropdown.open .user-access-caret {
+            transform:rotate(180deg);
+          }
+          .user-access-menu {
+            display:none;
+            position:absolute;
+            top:calc(100% + 6px);
+            left:0;
+            right:0;
+            z-index:20;
+            background:var(--card, #fff);
+            border:1px solid var(--border, #e2e8f0);
+            border-radius:14px;
+            box-shadow:0 14px 34px rgba(15,23,42,.10);
+            overflow:hidden;
+            max-height:280px;
+            overflow-y:auto;
+          }
+          .user-access-dropdown.open .user-access-menu {
+            display:block;
+          }
+          .user-access-option {
+            display:grid;
+            grid-template-columns:22px 1fr;
+            align-items:start;
+            gap:12px;
+            padding:12px 14px;
+            cursor:pointer;
+            border-bottom:1px solid var(--border, #eef2f7);
+            background:var(--card, #fff);
+            transition:background .15s;
+          }
+          .user-access-option:last-child {
+            border-bottom:none;
+          }
+          .user-access-option:hover {
+            background:rgba(200,164,78,.04);
+          }
+          .user-access-check {
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding-top:2px;
+          }
+          .user-access-check input {
+            width:16px;
+            height:16px;
+            margin:0;
+            accent-color:var(--gold, #c8a44e);
+            cursor:pointer;
+          }
+          .user-access-text strong {
+            display:block;
+            color:var(--text);
+            font-size:13px;
+            margin-bottom:4px;
+            line-height:1.3;
+          }
+          .user-access-text small {
+            display:block;
+            color:var(--muted, #64748b);
+            line-height:1.45;
+            font-size:12px;
+          }
+          .user-access-help {
+            margin-top:8px;
+            padding:10px 12px;
+            border-radius:10px;
+            background:#f8fafc;
+            border:1px solid var(--border, #e2e8f0);
+            color:var(--muted, #64748b);
+            font-size:12px;
+            line-height:1.55;
+          }
+        </style>
         <form id="userForm">
-          <div class="field"><label>Email *</label><input type="email" name="email" required placeholder="agent@opa.dz" /></div>
-          <div class="field"><label>Mot de passe *</label><input type="text" name="password" required minlength="6" placeholder="6 caractères min." /></div>
-          <div class="field"><label>Rôle *</label>
-            <select name="role">
-              <option value="saisie">Agent de saisie (ajout d'adhérents uniquement)</option>
-              ${presidentOption}
-              <option value="admin">Administrateur (accès complet)</option>
-            </select></div>
+          <input type="hidden" name="role" value="saisie" />
+          <div class="form-grid">
+            <div class="field"><label>Email *</label><input type="email" name="email" required placeholder="agent@opa.dz" /></div>
+            <div class="field"><label>Mot de passe *</label><input type="text" name="password" required minlength="6" placeholder="6 caractères min." /></div>
+            <div class="field full">
+              <label>Accès utilisateur *</label>
+              <div class="user-access-dropdown" id="userAccessDropdown">
+                <button type="button" class="user-access-trigger" id="userAccessTrigger">
+                  <span id="userAccessLabel">1 accès sélectionné</span>
+                  <span class="user-access-caret">▾</span>
+                </button>
+                <div class="user-access-menu" id="userAccessMenu">
+                  <label class="user-access-option">
+                    <span class="user-access-check"><input type="checkbox" name="permissions" value="adherents_add" data-label="Ajouter des adhérents" checked /></span>
+                    <span class="user-access-text"><strong>Ajouter des adhérents</strong><small>Création d’adhérents normaux uniquement, sans Bureau exécutif.</small></span>
+                  </label>
+                  <label class="user-access-option">
+                    <span class="user-access-check"><input type="checkbox" name="permissions" value="adherents_manage" data-label="Ajouter et modifier les adhérents" /></span>
+                    <span class="user-access-text"><strong>Ajouter et modifier les adhérents</strong><small>Accès à la liste, à la consultation et à la modification des adhérents.</small></span>
+                  </label>
+                  <label class="user-access-option">
+                    <span class="user-access-check"><input type="checkbox" name="permissions" value="demandes_view" data-label="Consulter les demandes" /></span>
+                    <span class="user-access-text"><strong>Consulter les demandes</strong><small>Lecture seule des demandes du site web.</small></span>
+                  </label>
+                  <label class="user-access-option">
+                    <span class="user-access-check"><input type="checkbox" name="permissions" value="demandes_edit" data-label="Consulter et modifier les demandes" /></span>
+                    <span class="user-access-text"><strong>Consulter et modifier les demandes</strong><small>Mise à jour, traitement et clôture des demandes.</small></span>
+                  </label>
+                  <label class="user-access-option">
+                    <span class="user-access-check"><input type="checkbox" name="permissions" value="documents_view" data-label="Consulter les documents des adhérents" /></span>
+                    <span class="user-access-text"><strong>Consulter les documents des adhérents</strong><small>Consultation des dossiers fusionnés et documents liés.</small></span>
+                  </label>
+                </div>
+              </div>
+              <div class="user-access-help">
+                Cliquez sur la liste déroulante puis cochez un ou plusieurs accès.<br>
+                Ce compte ne peut pas changer son mot de passe, ne peut pas faire de sauvegarde et n’a pas accès au Bureau exécutif.
+              </div>
+            </div>
+          </div>
           <div class="form-error" id="userErr"></div>
           <div class="modal-foot"><button type="button" class="btn btn-ghost" id="userCancel">Annuler</button>
           <button type="submit" class="btn btn-gold">Créer le compte</button></div>
         </form>`);
       $('#userCancel').onclick = closeModal;
+      const accessDropdown = $('#userAccessDropdown');
+      const accessTrigger = $('#userAccessTrigger');
+      const accessLabel = $('#userAccessLabel');
+      const accessChecks = Array.from(document.querySelectorAll('#userAccessMenu input[name="permissions"]'));
+      function refreshAccessLabel() {
+        const selected = accessChecks.filter((el) => el.checked).map((el) => el.dataset.label);
+        accessLabel.textContent = selected.length === 0
+          ? 'Choisir les accès'
+          : selected.length <= 2
+            ? selected.join(' • ')
+            : `${selected.length} accès sélectionnés`;
+      }
+      accessTrigger.onclick = () => {
+        accessDropdown.classList.toggle('open');
+      };
+      document.addEventListener('click', (ev) => {
+        if (!accessDropdown.contains(ev.target)) accessDropdown.classList.remove('open');
+      });
+      accessChecks.forEach((el) => el.onchange = refreshAccessLabel);
+      refreshAccessLabel();
       $('#userForm').onsubmit = async (e) => {
         e.preventDefault();
         const f = e.target;
+        const permissions = Array.from(f.querySelectorAll('input[name="permissions"]:checked')).map((el) => el.value);
+        if (!permissions.length) {
+          $('#userErr').textContent = 'Choisissez au moins un accès.';
+          return;
+        }
         try {
-          await API.createUser({ email: f.email.value, password: f.password.value, role: f.role.value });
+          await API.createUser({ email: f.email.value, password: f.password.value, role: f.role.value, permissions });
           toast('Compte créé.'); closeModal(); load();
         } catch (err) { $('#userErr').textContent = err.message; }
       };
@@ -1201,5 +1766,5 @@ async function documentsList() {
     load();
   }
 
-  return { setRef, setRole, dashboard, adherentsList, demandesList, documentsList, parametres, saisieAjout, comptesList };
+  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList };
 })();
