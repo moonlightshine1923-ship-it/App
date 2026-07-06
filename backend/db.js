@@ -124,6 +124,30 @@ export async function initSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
+  // Table BLACKLIST
+  await query(`
+    CREATE TABLE IF NOT EXISTS blacklist (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      adherent_id INT DEFAULT NULL,
+      nom VARCHAR(100) NOT NULL,
+      prenom VARCHAR(100) NOT NULL,
+      matricule VARCHAR(40) DEFAULT NULL,
+      telephone VARCHAR(30) DEFAULT NULL,
+      nin VARCHAR(18) DEFAULT NULL,
+      wilaya_code VARCHAR(5) DEFAULT NULL,
+      motif TEXT,
+      niveau_risque ENUM('faible','moyen','élevé','critique') DEFAULT 'moyen',
+      date_blacklist DATE DEFAULT NULL,
+      created_by INT DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_blacklist_adherent FOREIGN KEY (adherent_id) REFERENCES adherents(id) ON DELETE SET NULL,
+      CONSTRAINT fk_blacklist_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      INDEX idx_blacklist_matricule (matricule),
+      INDEX idx_blacklist_nom (nom, prenom)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
   await ensureMigrations();
 }
 

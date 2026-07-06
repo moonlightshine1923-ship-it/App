@@ -15,6 +15,8 @@ import demandesRoutes from './routes/demandes.js';
 import documentsRoutes from './routes/documents.js';
 import statsRoutes from './routes/stats.js';
 import usersRoutes from './routes/users.js';
+import blacklistRoutes from './routes/blacklist.js';
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -66,6 +68,7 @@ app.use('/api/demandes', demandesRoutes);
 app.use('/api/documents', documentsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/blacklist', blacklistRoutes);
 
 // Sauvegarde manuelle de la base (admin & président)
 app.post('/api/backup', authenticate, authorize('admin', 'president'), async (req, res) => {
@@ -117,7 +120,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3003;
 
 (async () => {
   try {

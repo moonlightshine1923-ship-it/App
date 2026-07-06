@@ -76,12 +76,30 @@ router.get('/', authenticate, authorize('admin', 'president'), async (req, res) 
     const demandesCloturees = demStatut('Clôturée') + demStatut('Résolue');
     const tauxTraitement = totalDemandes ? Math.round((demandesCloturees / totalDemandes) * 100) : 0;
 
+    // --- BLACKLIST STATS ---
+   // --- BLACKLIST STATS ---
+let totalBlacklist = 0;
+let blacklistRecent = [];
+try {
+  const blCount = await get('SELECT COUNT(*) AS c FROM blacklist');
+  totalBlacklist = blCount?.c || 0;
+  blacklistRecent = await query(`
+    SELECT bl.id, bl.nom, bl.prenom, bl.matricule, bl.date_blacklist, bl.motif
+    FROM blacklist bl
+    ORDER BY bl.created_at DESC
+    LIMIT 8
+  `);
+} catch(e) {
+  totalBlacklist = 0;
+  blacklistRecent = [];
+}
     res.json({
       totalAdherents,
       totalBureauExecutif,
       adherents: { AD: typeCount('AD'), MA: typeCount('MA'), CR: typeCount('CR'), gold },
       parWilaya, nouveauxMois, starGroups, adhesionsBientotExpirantes, meilleursMois, meilleursAnnee,
       demandes: { total: totalDemandes, ouvertes: demandesOuvertes, cloturees: demandesCloturees, tauxTraitement, parStatut: demandesParStatut },
+      blacklist: { total: totalBlacklist, recent: blacklistRecent }
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

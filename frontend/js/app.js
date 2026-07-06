@@ -9,6 +9,7 @@
     { id: 'dashboard', label: 'Tableau de bord', icon: '📊', title: 'Tableau de bord', render: () => Views.dashboard() },
     { id: 'adherents', label: 'Adhérents', icon: '👥', title: 'Gestion des adhérents', render: () => Views.adherentsList() },
     { id: 'bureau-executif', label: 'Bureau exécutif', icon: '🏛️', title: 'Bureau exécutif', render: () => Views.bureauExecutifList() },
+    { id: 'blacklist', label: 'Blacklist', icon: '🚫', title: 'Liste noire — Blacklist', render: () => Views.blacklistList() },
     { id: 'demandes', label: 'Demandes', icon: '📨', title: 'Demandes (site web)', render: () => Views.demandesList() },
     { id: 'documents', label: 'Documents', icon: '📁', title: 'Gestion documentaire', render: () => Views.documentsList() },
     { id: 'comptes', label: 'Comptes', icon: '🔑', title: 'Comptes utilisateurs', render: () => Views.comptesList() },

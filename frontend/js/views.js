@@ -1766,5 +1766,233 @@ async function documentsList() {
     load();
   }
 
-  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList };
+  /* ============ BLACKLIST ============ */
+
+  async function blacklistList() {
+    const c = container();
+    if (!(ROLE === 'admin' || ROLE === 'president')) {
+      c.innerHTML = UI.emptyState('🔒', 'Accès réservé à l’administrateur et au président.');
+      return;
+    }
+    c.innerHTML = `
+      <div class="panel" style="margin-bottom:18px;border:1px solid #fecaca;background:#fff5f5">
+        <div style="padding:14px 16px;display:flex;align-items:center;gap:12px">
+          <span style="font-size:22px">🚫</span>
+          <div>
+            <div style="font-weight:800;color:#b91c1c">Liste noire – Blacklist OPA</div>
+            <div class="muted" style="font-size:13px">Les adhérents blacklistés sont signalés sur le tableau de bord.</div>
+          </div>
+        </div>
+      </div>
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px">
+        <input type="search" id="blSearch" placeholder="Rechercher (nom, prénom, matricule)…" />
+        <button class="btn btn-dark" id="blRefresh">⟳ Rafraîchir</button>
+        <button class="btn btn-gold" id="blAdd">+ Ajouter à la blacklist</button>
+      </div>
+      <div id="blTable"><div class="muted">Chargement…</div></div>
+    `;
+
+    async function load() {
+      const params = {};
+      const q = $('#blSearch').value.trim(); if(q) params.q = q;
+      const list = await API.blacklist(params);
+      renderBlTable(list);
+    }
+
+    function renderBlTable(list) {
+      const t = $('#blTable');
+      if(!list.length){ t.innerHTML = UI.emptyState('🚫', 'Aucune entrée dans la blacklist.'); return; }
+      t.innerHTML = `<div class="table-wrap"><table class="data">
+        <thead><tr>
+          <th>Nom & Prénom</th><th>Matricule</th><th>Date blacklist</th><th>Motif</th><th></th>
+        </tr></thead><tbody>
+        ${list.map(b=>`
+          <tr>
+            <td class="cell-strong">${esc(b.prenom)} ${esc(b.nom)}</td>
+            <td><span class="mono" style="color:#b91c1c;font-weight:700">${esc(b.matricule||'—')}</span></td>
+            <td class="muted">${esc(fmtDate(b.date_blacklist))}</td>
+            <td style="max-width:360px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(b.motif||'')}">${esc(b.motif||'—')}</div></td>
+            <td><div class="row-actions">
+              <button class="btn btn-dark btn-sm" data-view="${b.id}">Voir</button>
+              <button class="btn btn-gold btn-sm" data-edit="${b.id}">✎</button>
+              <button class="btn btn-danger btn-sm" data-del="${b.id}">Retirer</button>
+            </div></td>
+          </tr>
+        `).join('')}
+        </tbody></table></div>`;
+      t.querySelectorAll('[data-view]').forEach(btn=>btn.onclick=()=>blacklistDetail(btn.dataset.view, load));
+      t.querySelectorAll('[data-edit]').forEach(btn=>btn.onclick=()=>blacklistForm(btn.dataset.edit, load));
+      t.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{
+        confirm('Retirer cette personne de la blacklist ?', async ()=>{
+          await API.deleteBlacklist(btn.dataset.del);
+          toast('Retiré de la blacklist.');
+          load();
+        });
+      });
+    }
+
+    let timer;
+    $('#blSearch').oninput = ()=>{ clearTimeout(timer); timer=setTimeout(load, 280); };
+    $('#blRefresh').onclick = ()=>{ load(); toast('Liste actualisée.'); };
+    $('#blAdd').onclick = ()=>blacklistForm(null, load);
+
+    load();
+  }
+
+  async function blacklistForm(id, onDone) {
+    let bl = null;
+    if(id){ bl = await API.blacklistEntry(id); }
+    const isEdit = !!bl;
+    openModal(isEdit ? 'Modifier entrée blacklist' : 'Ajouter à la blacklist', `
+      <form id="blForm">
+        <div class="form-grid">
+          <div class="field"><label>Nom *</label><input name="nom" value="${esc(bl?.nom||'')}" required /></div>
+          <div class="field"><label>Prénom *</label><input name="prenom" value="${esc(bl?.prenom||'')}" required /></div>
+          <div class="field"><label>Matricule</label><input name="matricule" value="${esc(bl?.matricule||'')}" placeholder="ex: AGN..." /></div>
+          <div class="field"><label>Date blacklist</label><input type="date" name="date_blacklist" value="${esc(bl?.date_blacklist ? fmtDate(bl.date_blacklist) : new Date().toISOString().slice(0,10))}" /></div>
+          <div class="field full"><label>Motif</label><textarea name="motif" rows="3" placeholder="Raison du blacklistage...">${esc(bl?.motif||'')}</textarea></div>
+        </div>
+        <div class="form-error" id="blFormErr"></div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" id="blFormCancel">Annuler</button>
+          <button type="submit" class="btn btn-gold">${isEdit?'Enregistrer':'Ajouter'}</button>
+        </div>
+      </form>
+    `, true);
+    $('#blFormCancel').onclick = closeModal;
+    $('#blForm').onsubmit = async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const data = Object.fromEntries(fd.entries());
+      try{
+        if(isEdit){
+          await API.updateBlacklist(id, data);
+          toast('Entrée mise à jour.');
+        } else {
+          await API.createBlacklist(data);
+          toast('Ajouté à la blacklist.');
+        }
+        closeModal();
+        onDone && onDone();
+      }catch(err){
+        $('#blFormErr').textContent = err.message;
+      }
+    };
+  }
+
+  async function blacklistDetail(id, onBack) {
+    const b = await API.blacklistEntry(id);
+    openModal('🚫 Détail blacklist', `
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:16px">
+        <div style="font-size:36px">🚫</div>
+        <div>
+          <div style="font-size:18px;font-weight:800">${esc(b.prenom)} ${esc(b.nom)}</div>
+          <div class="mono" style="color:#b91c1c;font-weight:700">${esc(b.matricule||'Sans matricule')}</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        ${detailItem('Nom', b.nom||'—')}
+        ${detailItem('Prénom', b.prenom||'—')}
+        ${detailItem('Matricule', b.matricule||'—')}
+        ${detailItem('Date blacklist', fmtDate(b.date_blacklist))}
+        ${detailItem('Ajouté par', b.created_by_email||'—')}
+        ${detailItem('Créé le', (b.created_at||'').slice(0,16).replace('T',' '))}
+      </div>
+      ${b.motif ? `<div class="panel" style="margin-top:14px"><div class="panel-head"><h3>Motif</h3></div><div style="padding:14px;line-height:1.6">${esc(b.motif)}</div></div>` : ''}
+      <div class="modal-foot">
+        <button class="btn btn-dark" id="blEdit">✎ Modifier</button>
+        <button class="btn btn-danger" id="blRemove">Retirer de la blacklist</button>
+        <button class="btn btn-gold" id="blClose">Fermer</button>
+      </div>
+    `, true);
+    $('#blClose').onclick = closeModal;
+    $('#blEdit').onclick = ()=>{ closeModal(); setTimeout(()=>blacklistForm(id, ()=>{ onBack && onBack(); }), 60); };
+    $('#blRemove').onclick = ()=>{
+      confirm('Retirer définitivement de la blacklist ?', async ()=>{
+        await API.deleteBlacklist(id);
+        toast('Retiré de la blacklist.');
+        closeModal();
+        onBack && onBack();
+      });
+    };
+  }
+
+  // --- Patch dashboard pour afficher blacklist ---
+  const _origDashboard = dashboard;
+  dashboard = async function() {
+    await _origDashboard();
+    try {
+      const s = await API.stats();
+      const bl = s.blacklist || { total:0, recent:[] };
+      // injecter KPI blacklist
+      const kpiRow = document.querySelector('.kpi-row');
+      if (kpiRow && !document.getElementById('kpi-blacklist')) {
+        const k = document.createElement('div');
+        k.innerHTML = `
+          <div class="kpi" id="kpi-blacklist" style="cursor:pointer" onclick="Views.blacklistList()">
+            <div class="kpi-accent" style="background:#dc2626"></div>
+            <div class="kpi-ico" style="background:#fee2e2;color:#dc2626">🚫</div>
+            <div class="kpi-val" style="color:#dc2626">${bl.total}</div>
+            <div class="kpi-lbl">Blacklist</div>
+            <div class="kpi-sub">personnes signalées</div>
+          </div>`;
+        kpiRow.appendChild(k.firstElementChild);
+      }
+      // panneau blacklist récent
+      const containerEl = container();
+      if (bl.recent && bl.recent.length) {
+        const panel = document.createElement('div');
+        panel.className = 'dash-panel';
+        panel.style.marginBottom = '28px';
+        panel.innerHTML = `
+          <div class="dash-panel-head">
+            <h3>🚫 Blacklist récente</h3>
+            <button class="btn btn-dark btn-sm" onclick="Views.blacklistList()">Voir tout →</button>
+          </div>
+          <div class="dash-panel-body" style="padding:0">
+            <table class="mini-table">
+              <thead><tr><th>Nom</th><th>Matricule</th><th>Date</th></tr></thead>
+              <tbody>
+                ${bl.recent.map(x=>`
+                  <tr>
+                    <td style="font-weight:600">${esc(x.prenom||'')} ${esc(x.nom||'')}</td>
+                    <td><span class="mono" style="color:#b91c1c">${esc(x.matricule||'—')}</span></td>
+                    <td class="muted">${esc(fmtDate(x.date_blacklist))}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>`;
+        const firstGrid = containerEl.querySelector('.dash-grid');
+        if (firstGrid) firstGrid.parentNode.insertBefore(panel, firstGrid);
+      }
+      // alerte si blacklist non vide - SANS la phrase "consultez la liste noire..."
+      if (bl.total > 0) {
+        const header = containerEl.querySelector('.dash-header');
+        if (header && !document.getElementById('blAlert')) {
+          const alert = document.createElement('div');
+          alert.id = 'blAlert';
+          alert.className = 'alert-banner';
+          alert.style.cssText = 'background:#fef2f2;color:#991b1b;border:1px solid #fecaca';
+          alert.innerHTML = `<span style="font-size:18px">🚫</span>
+            <span><b>${bl.total} personne${bl.total>1?'s':''} en blacklist</b></span>
+            <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="Views.blacklistList()">Ouvrir la blacklist →</button>`;
+          header.after(alert);
+        }
+      }
+      // quick action blacklist
+      const qa = document.getElementById('qaComptes')?.parentElement;
+      if (qa && !document.getElementById('qaBlacklist')) {
+        const btn = document.createElement('button');
+        btn.className = 'qa-btn';
+        btn.id = 'qaBlacklist';
+        btn.innerHTML = `<div class="qa-ico" style="background:rgba(220,38,38,.08);color:#dc2626">🚫</div>
+          <div><div>Blacklist</div><div style="font-size:11px;color:var(--muted,#94a3b8);font-weight:400">${bl.total} signalé${bl.total>1?'s':''}</div></div>`;
+        btn.onclick = ()=>blacklistList();
+        qa.appendChild(btn);
+      }
+    } catch(e){ console.warn('blacklist dashboard', e.message); }
+  };
+
+  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList, blacklistList };
 })();

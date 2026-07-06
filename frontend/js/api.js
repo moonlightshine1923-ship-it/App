@@ -94,6 +94,17 @@ const API = (() => {
     adherentsStatut: () => request('GET', '/documents/adherents-statut'),
     fusionnerDossier: (adherentId, formData) => request('POST', `/documents/fusionner/${adherentId}`, formData, true),
 
+    // --- BLACKLIST ---
+    blacklist: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request('GET', '/blacklist' + (q ? '?' + q : ''));
+    },
+    blacklistEntry: (id) => request('GET', '/blacklist/' + id),
+    createBlacklist: (data) => request('POST', '/blacklist', data),
+    updateBlacklist: (id, data) => request('PATCH', '/blacklist/' + id, data),
+    deleteBlacklist: (id) => request('DELETE', '/blacklist/' + id),
+    blacklistAdherent: (adherentId, data = {}) => request('POST', `/blacklist/adherent/${adherentId}`, data),
+
     // Renvoie un blob URL authentifié pour un fichier protégé
     fileUrl: async (relPath) => {
       const res = await fetch('/uploads/' + relPath, {
