@@ -189,13 +189,13 @@ router.get('/preview/matricule', authenticate, authorize('admin', 'president', '
 router.get('/', authenticate, authorize('admin', 'president', 'perm:adherents_manage'), async (req, res) => {
   try {
     await assureMatricules();
-    const { q, wilaya, type } = req.query;
+    const { q, wilaya, type, validite } = req.query;
     let sql = 'SELECT * FROM adherents WHERE 1=1';
     const params = [];
     if (q) {
-      sql += ' AND (nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR telephone LIKE ? OR bureau_badge_type LIKE ?)';
+      sql += ' AND (nom LIKE ? OR prenom LIKE ? OR matricule LIKE ? OR telephone LIKE ? OR bureau_badge_type LIKE ? OR email LIKE ?)';
       const like = `%${q}%`;
-      params.push(like, like, like, like, like);
+      params.push(like, like, like, like, like, like);
     }
     if (wilaya) { sql += ' AND wilaya_code = ?'; params.push(wilaya); }
     if (type) {
@@ -210,6 +210,13 @@ router.get('/', authenticate, authorize('admin', 'president', 'perm:adherents_ma
     } else {
       sql += " AND (type_code IS NULL OR type_code <> 'BE')";
     }
+
+    if (validite === 'valide') {
+      sql += " AND (date_adhesion IS NOT NULL AND DATE_ADD(date_adhesion, INTERVAL 1 YEAR) >= CURDATE())";
+    } else if (validite === 'expire') {
+      sql += " AND (date_adhesion IS NOT NULL AND DATE_ADD(date_adhesion, INTERVAL 1 YEAR) < CURDATE())";
+    }
+
     sql += ' ORDER BY created_at DESC';
     const rows = await query(sql, params);
     res.json(rows.map(enrich));
@@ -261,9 +268,9 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const carte_remise = normalizeCarteRemise(b.carte_remise);
 
     const result = await run(
-      `INSERT INTO adherents (matricule, nom, prenom, nom_ar, prenom_ar, telephone, nin, doc_type, doc_numero, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero),
+      `INSERT INTO adherents (matricule, nom, prenom, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, nin, doc_type, doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
     );
 
@@ -277,7 +284,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     if (!created) {
       created = { 
         id: targetId, matricule, nom: text(b.nom), prenom: text(b.prenom), nom_ar: text(b.nom_ar), prenom_ar: text(b.prenom_ar),
-        telephone: opt(b.telephone), nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), photo,
+        telephone: opt(b.telephone), email: opt(b.email), whatsapp: opt(b.whatsapp), viber: opt(b.viber), adresse_personnelle: opt(b.adresse_personnelle), nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), doc_numero_2: opt(b.doc_numero_2), photo,
         wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion,
         description, paiement_mode: paiement.paiement_mode, paiement_banque: paiement.paiement_banque, paiement_ref: paiement.paiement_ref,
         bureau_code, bureau_badge_type, etoiles, carte_remise
@@ -328,9 +335,9 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
     }
 
     await run(
-      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_ar=?, prenom_ar=?, telephone=?, nin=?, doc_type=?, doc_numero=?, photo=?,
+      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
        wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, etoiles=?, carte_remise=? WHERE id=?`,
-      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero),
+      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise, a.id]
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);

@@ -95,7 +95,7 @@ const Views = (() => {
       isSoon: daysLeft >= 0 && daysLeft <= 30,
     };
   }
-
+  
   function loadClosedNotifications() {
     try {
       return JSON.parse(localStorage.getItem(ADH_NOTIF_KEY) || '{}');
@@ -743,94 +743,284 @@ const Views = (() => {
     const currBadgeType = adh?.bureau_badge_type || '';
     const currCarteRemise = Number.parseInt(adh?.carte_remise, 10) === 1;
     const allowBE = canAccessBE();
+openModal(
+  isRenewal ? "Renouveler l'adhésion" : (isEdit ? "Modifier l'adhérent" : 'Nouvelle fiche'),
+  `
+  <style>
+    /* Correctifs formulaire adhérent */
+    #adhForm .adh-check-field {
+      display: flex !important;
+      align-items: center !important;
+      padding-top: 24px;
+    }
 
-    openModal(isRenewal ? "Renouveler l'adhésion" : (isEdit ? "Modifier l'adhérent" : 'Nouvelle fiche'), `
-      <form id="adhForm">
-        ${isRenewal ? `<div style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8">Modifiez la date d'adhésion puis enregistrez. Vous pouvez aussi ajuster les autres champs si nécessaire.</div>` : ''}
-        <div class="form-grid">
-          <div class="field"><label>Nom</label><input name="nom" value="${esc(adh?.nom || '')}" /></div>
-          <div class="field"><label>Prénom</label><input name="prenom" value="${esc(adh?.prenom || '')}" /></div>
-          <div class="field"><label>الاسم العائلي (Nom en arabe)</label><input name="nom_ar" dir="rtl" value="${esc(adh?.nom_ar || '')}" /></div>
-          <div class="field"><label>الاسم الشخصي (Prénom en arabe)</label><input name="prenom_ar" dir="rtl" value="${esc(adh?.prenom_ar || '')}" /></div>
-          <div class="field"><label>Téléphone</label><input name="telephone" value="${esc(adh?.telephone || '')}" placeholder="05XXXXXXXX" /></div>
-          <div class="field"><label>NIN (18 chiffres)</label><input name="nin" value="${esc(adh?.nin || '')}" maxlength="18" pattern="[0-9]{18}" placeholder="18 chiffres" /></div>
-          <div class="field"><label>Type de document</label><select name="doc_type" id="fDocType">${docTypeOptions(adh?.doc_type || 'RC')}</select></div>
-          <div class="field"><label>Numéro du document</label><input name="doc_numero" id="fDocNum" value="${esc(adh?.doc_numero || '')}" />
-            <small class="muted" id="docHint"></small></div>
-          <div class="field"><label>Wilaya</label><select name="wilaya_code" id="fWilaya">${wilayaOptions(adh?.wilaya_code || '16')}</select></div>
-          <div class="field">
-            <label>Type de membre</label>
-            <select id="fTypeSelect">
-              <option value="Adhérent Simple" data-code="AD" ${currTypeCode === 'AD' && !currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent simple (AD)</option>
-              <option value="Adhérent Gold" data-code="AD" ${currTypeCode === 'AD' && currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>Adhérent gold (AD)</option>
-              <option value="Membre Actif" data-code="MA" ${currTypeCode === 'MA' ? 'selected' : ''}>Membre Actif (MA)</option>
-              <option value="Conseiller" data-code="CR" ${currTypeCode === 'CR' ? 'selected' : ''}>Conseiller (CR)</option>
-              ${allowBE ? `<option value="Bureau exécutif" data-code="BE" ${currTypeCode === 'BE' ? 'selected' : ''}>Bureau exécutif (BE)</option>` : ''}
-            </select>
-            <input type="hidden" name="type_code" id="fTypeCode" value="${esc(currTypeCode)}" />
-            <input type="hidden" name="niveau" id="fNiveau" value="${esc(currNiveau)}" />
-          </div>
-          <div class="field"><label>Date d'adhésion</label><input type="date" name="date_adhesion" id="fDate" value="${esc(adh?.date_adhesion ? fmtDate(adh.date_adhesion) : '')}" /></div>
-          <div class="field"><label>Année (auto)</label><input id="fAnnee" value="${adh?.annee || new Date(today).getFullYear()}" disabled /></div>
-          <div class="field"><label>Photo</label><input type="file" name="photo" accept="image/*" /></div>
-          <div class="field" style="display:flex;align-items:end">
-            <label style="display:flex;align-items:center;gap:10px;margin:0;cursor:pointer">
-              <input type="checkbox" name="carte_remise" value="1" ${currCarteRemise ? 'checked' : ''} />
-              <span>Carte remise</span>
-            </label>
-          </div>
+    #adhForm .adh-check-label {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      margin: 0 !important;
+      cursor: pointer;
+      white-space: nowrap;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
 
-          <div class="field" id="fBureauCodeWrap">
-            <label>Code Bureau exécutif (3 caractères) *</label>
-            <input name="bureau_code" id="fBureauCode" value="${esc(currBureauCode)}" maxlength="3" placeholder="ABC" />
-          </div>
-          <div class="field" id="fBadgeTypeWrap">
-            <label>Type affiché sur badge *</label>
-            <input name="bureau_badge_type" id="fBadgeType" value="${esc(currBadgeType)}"  />
-          </div>
+    #adhForm .adh-check-label input[type="checkbox"] {
+      width: 18px !important;
+      height: 18px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      flex: 0 0 auto !important;
+      accent-color: var(--blue);
+    }
 
-          <div class="field" id="fEtoilesWrap">
-            <label>Classement étoiles</label>
-            <select name="etoiles" id="fEtoiles">
-              <option value="0" ${currEtoiles === 0 ? 'selected' : ''}>0 étoile</option>
-              <option value="1" ${currEtoiles === 1 ? 'selected' : ''}>1 étoile</option>
-              <option value="2" ${currEtoiles === 2 ? 'selected' : ''}>2 étoiles</option>
-              <option value="3" ${currEtoiles === 3 ? 'selected' : ''}>3 étoiles</option>
-            </select>
-          </div>
+    #adhForm .paiement-options {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      padding: 10px 0 4px;
+    }
 
-          <div class="field full">
-            <label>Mode de paiement</label>
-            <div style="display:flex;gap:18px;flex-wrap:wrap;padding:10px 0 4px">
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="" ${!currPaiementMode ? 'checked' : ''} /> Non renseigné</label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="cheque" ${currPaiementMode === 'cheque' ? 'checked' : ''} /> Chèque</label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="espece" ${currPaiementMode === 'espece' ? 'checked' : ''} /> Espèce</label>
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="paiement_mode" value="virement" ${currPaiementMode === 'virement' ? 'checked' : ''} /> Virement</label>
-            </div>
-          </div>
+    #adhForm .paiement-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
 
-          <div class="field" id="fPaiementRefWrap">
-            <label id="fPaiementRefLabel">Référence</label>
-            <input name="paiement_ref" id="fPaiementRef" value="${esc(currPaiementRef)}" />
-            <small class="muted" id="fPaiementRefHint"></small>
-          </div>
-          <div class="field" id="fPaiementBanqueWrap">
-            <label id="fPaiementBanqueLabel">Banque</label>
-            <input name="paiement_banque" id="fPaiementBanque" value="${esc(currPaiementBanque)}" />
-          </div>
+    #adhForm .paiement-option input[type="radio"] {
+      width: 18px !important;
+      height: 18px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      accent-color: var(--blue);
+    }
+  </style>
 
-          <div class="field full"><label>Description / Notes</label><textarea name="description" rows="3" placeholder="Informations complémentaires, observations…" style="resize:vertical">${esc(adh?.description || '')}</textarea></div>
+  <form id="adhForm">
+    ${isRenewal ? `
+      <div style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8">
+        Modifiez la date d'adhésion puis enregistrez. Vous pouvez aussi ajuster les autres champs si nécessaire.
+      </div>
+    ` : ''}
+
+    <div class="form-grid">
+
+      <div class="field">
+        <label>Nom</label>
+        <input name="nom" value="${esc(adh?.nom || '')}" required />
+      </div>
+
+      <div class="field">
+        <label>Prénom</label>
+        <input name="prenom" value="${esc(adh?.prenom || '')}" required />
+      </div>
+
+      <div class="field">
+        <label>Nom (Arabe)</label>
+        <input name="nom_ar" value="${esc(adh?.nom_ar || '')}" dir="rtl" />
+      </div>
+
+      <div class="field">
+        <label>Prénom (Arabe)</label>
+        <input name="prenom_ar" value="${esc(adh?.prenom_ar || '')}" dir="rtl" />
+      </div>
+
+      <div class="field">
+        <label>Téléphone</label>
+        <input name="telephone" value="${esc(adh?.telephone || '')}" />
+      </div>
+
+      <div class="field">
+        <label>WhatsApp</label>
+        <input name="whatsapp" value="${esc(adh?.whatsapp || '')}" />
+      </div>
+
+      <div class="field">
+        <label>Viber</label>
+        <input name="viber" value="${esc(adh?.viber || '')}" />
+      </div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="email" name="email" value="${esc(adh?.email || '')}" />
+      </div>
+
+      <div class="field full">
+        <label>Adresse personnelle</label>
+        <input name="adresse_personnelle" value="${esc(adh?.adresse_personnelle || '')}" placeholder="Adresse complète..." />
+      </div>
+
+      <div class="field">
+        <label>NIN (18 chiffres)</label>
+        <input name="nin" value="${esc(adh?.nin || '')}" maxlength="18" pattern="[0-9]{18}" placeholder="18 chiffres" />
+      </div>
+
+      <div class="field">
+        <label>Type de document</label>
+        <select name="doc_type" id="fDocType">
+          ${docTypeOptions(adh?.doc_type || 'RC')}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Numéro du document</label>
+        <input name="doc_numero" id="fDocNum" value="${esc(adh?.doc_numero || '')}" />
+        <small class="muted" id="docHint"></small>
+      </div>
+
+      <div class="field">
+        <label>Autre numéro de RC (si besoin)</label>
+        <input name="doc_numero_2" value="${esc(adh?.doc_numero_2 || '')}" />
+      </div>
+
+      <div class="field">
+        <label>Wilaya</label>
+        <select name="wilaya_code" id="fWilaya">
+          ${wilayaOptions(adh?.wilaya_code || '16')}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Type de membre</label>
+        <select id="fTypeSelect">
+          <option value="Adhérent Simple" data-code="AD" ${currTypeCode === 'AD' && !currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>
+            Adhérent simple (AD)
+          </option>
+
+          <option value="Adhérent Gold" data-code="AD" ${currTypeCode === 'AD' && currNiveau.toLowerCase().includes('gold') ? 'selected' : ''}>
+            Adhérent gold (AD)
+          </option>
+
+          <option value="Membre Actif" data-code="MA" ${currTypeCode === 'MA' ? 'selected' : ''}>
+            Membre Actif (MA)
+          </option>
+
+          <option value="Conseiller" data-code="CR" ${currTypeCode === 'CR' ? 'selected' : ''}>
+            Conseiller (CR)
+          </option>
+
+          ${allowBE ? `
+            <option value="Bureau exécutif" data-code="BE" ${currTypeCode === 'BE' ? 'selected' : ''}>
+              Bureau exécutif (BE)
+            </option>
+          ` : ''}
+        </select>
+
+        <input type="hidden" name="type_code" id="fTypeCode" value="${esc(currTypeCode)}" />
+        <input type="hidden" name="niveau" id="fNiveau" value="${esc(currNiveau)}" />
+      </div>
+
+      <div class="field">
+        <label>Date d'adhésion</label>
+        <input 
+          type="date" 
+          name="date_adhesion" 
+          id="fDate" 
+          value="${esc(adh?.date_adhesion ? String(adh.date_adhesion).slice(0, 10) : '')}" 
+        />
+      </div>
+
+      <div class="field">
+        <label>Année (auto)</label>
+        <input id="fAnnee" value="${esc(adh?.annee || new Date(today).getFullYear())}" disabled />
+      </div>
+
+      <div class="field">
+        <label>Photo</label>
+        <input type="file" name="photo" accept="image/*" />
+      </div>
+
+      <div class="field adh-check-field">
+        <label class="adh-check-label">
+          <input type="checkbox" name="carte_remise" value="1" ${currCarteRemise ? 'checked' : ''} />
+          <span>Carte remise</span>
+        </label>
+      </div>
+
+      <div class="field" id="fBureauCodeWrap">
+        <label>Code Bureau exécutif (3 caractères) *</label>
+        <input name="bureau_code" id="fBureauCode" value="${esc(currBureauCode)}" maxlength="3" placeholder="ABC" />
+      </div>
+
+      <div class="field" id="fBadgeTypeWrap">
+        <label>Type affiché sur badge *</label>
+        <input name="bureau_badge_type" id="fBadgeType" value="${esc(currBadgeType)}" />
+      </div>
+
+      <div class="field" id="fEtoilesWrap">
+        <label>Classement étoiles</label>
+        <select name="etoiles" id="fEtoiles">
+          <option value="0" ${currEtoiles === 0 ? 'selected' : ''}>0 étoile</option>
+          <option value="1" ${currEtoiles === 1 ? 'selected' : ''}>1 étoile</option>
+          <option value="2" ${currEtoiles === 2 ? 'selected' : ''}>2 étoiles</option>
+          <option value="3" ${currEtoiles === 3 ? 'selected' : ''}>3 étoiles</option>
+        </select>
+      </div>
+
+      <div class="field full">
+        <label>Mode de paiement</label>
+
+        <div class="paiement-options">
+          <label class="paiement-option">
+            <input type="radio" name="paiement_mode" value="" ${!currPaiementMode ? 'checked' : ''} />
+            <span>Non renseigné</span>
+          </label>
+
+          <label class="paiement-option">
+            <input type="radio" name="paiement_mode" value="cheque" ${currPaiementMode === 'cheque' ? 'checked' : ''} />
+            <span>Chèque</span>
+          </label>
+
+          <label class="paiement-option">
+            <input type="radio" name="paiement_mode" value="espece" ${currPaiementMode === 'espece' ? 'checked' : ''} />
+            <span>Espèce</span>
+          </label>
+
+          <label class="paiement-option">
+            <input type="radio" name="paiement_mode" value="virement" ${currPaiementMode === 'virement' ? 'checked' : ''} />
+            <span>Virement</span>
+          </label>
         </div>
-        <div class="field full" style="margin-top:6px">
-          <label>Matricule :</label>
-          <div class="matricule-preview" id="matPreview">${esc(adh?.matricule || '…')}</div>
-        </div>
-        <div class="form-error" id="adhFormErr"></div>
-        <div class="modal-foot">
-          <button type="button" class="btn btn-ghost" id="adhCancel">Annuler</button>
-          <button type="submit" class="btn btn-gold">${isEdit ? 'Enregistrer' : 'Créer la fiche'}</button>
-        </div>
-      </form>`, true);
+      </div>
+
+      <div class="field" id="fPaiementRefWrap">
+        <label id="fPaiementRefLabel">Référence</label>
+        <input name="paiement_ref" id="fPaiementRef" value="${esc(currPaiementRef)}" />
+        <small class="muted" id="fPaiementRefHint"></small>
+      </div>
+
+      <div class="field" id="fPaiementBanqueWrap">
+        <label id="fPaiementBanqueLabel">Banque</label>
+        <input name="paiement_banque" id="fPaiementBanque" value="${esc(currPaiementBanque)}" />
+      </div>
+
+      <div class="field full">
+        <label>Description / Notes</label>
+        <textarea name="description" rows="3" placeholder="Informations complémentaires, observations…" style="resize:vertical">${esc(adh?.description || '')}</textarea>
+      </div>
+
+    </div>
+
+    <div class="field full" style="margin-top:6px">
+      <label>Matricule :</label>
+      <div class="matricule-preview" id="matPreview">
+        ${esc(adh?.matricule || '…')}
+      </div>
+    </div>
+
+    <div class="form-error" id="adhFormErr"></div>
+
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="adhCancel">Annuler</button>
+      <button type="submit" class="btn btn-gold">${isEdit ? 'Enregistrer' : 'Créer la fiche'}</button>
+    </div>
+  </form>
+  `,
+  true
+);
 
     function updateDocHint() {
       const sel = $('#fDocType');
@@ -895,7 +1085,7 @@ const Views = (() => {
         refWrap.style.display = 'none';
         bankWrap.style.display = '';
         bankLabel.textContent = 'Information virement *';
-        bankInput.placeholder = "L'admin écrit ce qu'il veut : CCP, banque, détail...";
+        bankInput.placeholder = "Information sur le virement ";
         refInput.required = false;
         bankInput.required = true;
         refInput.value = '';
@@ -999,6 +1189,11 @@ const Views = (() => {
         ${detailItem('Téléphone', a.telephone || '—')}
         ${detailItem('NIN', a.nin || '—')}
         ${detailItem(a.doc_type_libelle || 'Document', a.doc_numero || '—')}
+        ${detailItem('Autre numéro RC', a.doc_numero_2 || '—')}
+        ${detailItem('Email', a.email || '—')}
+        ${detailItem('WhatsApp', a.whatsapp || '—')}
+        ${detailItem('Viber', a.viber || '—')}
+        ${detailItem('Adresse personnelle', a.adresse_personnelle || '—')}
         ${detailItem('Wilaya', a.wilaya_nom || '—')}
         ${detailItem("Date d'adhésion", fmtDate(a.date_adhesion))}
         ${a.type_code === 'BE' ? '' : detailItem("Fin d'adhésion", expiry ? expiry.expirationText : '—')}
@@ -1132,30 +1327,24 @@ const Views = (() => {
     if (!list.length) { t.innerHTML = UI.emptyState('📨', 'Aucune demande.'); return; }
     
     t.innerHTML = `<div class="table-wrap"><table class="data">
-      <thead><tr>
-        <th width="40"><input type="checkbox" id="selectAllDem" /></th>
-        <th>Numéro</th><th>Nom</th><th>Prénom</th><th>Wilaya</th>
-        <th>Date & Heure de création</th><th>Statut</th><th></th>
-      </tr></thead><tbody>
-      ${list.map((d) => `<tr>
-        <td><input type="checkbox" class="dem-checkbox" value="${d.id}" /></td>
-        
-        <td>
-        <span class="mono" style="font-weight:bold; color:var(--gold); font-size: 13px;">
-          ${esc(d.numero || '—')}
-        </span>
-      </td>
-        <td class="cell-strong">${esc(d.nom)}</td>
-        <td>${esc(d.prenom)}</td>
-        <td>${esc(d.wilaya_nom || d.wilaya_code || '—')}</td>
-        <td class="muted">${esc((d.created_at || '').replace('T', ' ').slice(0, 16))}</td>
-        <td>${UI.statutTag(d.statut)}</td>
-        <td><div class="row-actions">
-          <button class="btn btn-dark btn-sm" data-view="${d.id}">${canEditDemandes() ? 'Traiter' : 'Voir'}</button>
-          ${canEditDemandes() ? `<button class="btn btn-danger btn-sm" data-del="${d.id}">✕</button>` : ''}
-        </div></td>
-      </tr>`).join('')}
-      </tbody></table></div>`;
+    <thead><tr>
+      <th width="40"><input type="checkbox" id="selectAllDem" /></th>
+      <th>Nom</th><th>Prénom</th><th>Wilaya</th>
+      <th>Date & Heure de création</th><th>Statut</th><th></th>
+    </tr></thead><tbody>
+    ${list.map((d) => `<tr>
+      <td><input type="checkbox" class="dem-checkbox" value="${d.id}" /></td>
+      <td class="cell-strong">${esc(d.nom)}</td>
+      <td>${esc(d.prenom)}</td>
+      <td>${esc(d.wilaya_nom || d.wilaya_code || '—')}</td>
+      <td class="muted">${esc((d.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      <td>${UI.statutTag(d.statut)}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-dark btn-sm" data-view="${d.id}">${canEditDemandes() ? 'Traiter' : 'Voir'}</button>
+        ${canEditDemandes() ? `<button class="btn btn-danger btn-sm" data-del="${d.id}">✕</button>` : ''}
+      </div></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
 
     // Logique Tout Sélectionner / Tout Désélectionner
     const selectAll = $('#selectAllDem');
@@ -1179,7 +1368,7 @@ const Views = (() => {
       ? d.pieces.map((p) => `<button class="btn btn-dark btn-sm" data-file="${esc(p.filename)}">📎 ${esc(p.original_name || 'Pièce')}</button>`).join(' ')
       : '<span class="muted">Aucune pièce jointe.</span>';
 
-    openModal('Demande ' + d.numero, `
+    openModal('Demande ' `
       <div class="detail-grid" style="margin-bottom:18px">
         ${detailItem('Nom', d.nom)}
         ${detailItem('Prénom', d.prenom)}
@@ -1514,7 +1703,7 @@ async function documentsList() {
   }
 
   /* ============ COMPTES UTILISATEURS ============ */
-  async function comptesList() {
+   async function comptesList() {
     const c = container();
     c.innerHTML = `
       <div class="toolbar">
@@ -1535,7 +1724,7 @@ async function documentsList() {
         documents_view: 'Consulter les documents des adhérents',
       };
       t.innerHTML = `<div class="table-wrap"><table class="data">
-        <thead><tr><th>Email</th><th>Rôle</th><th>Accès</th><th>Créé le</th><th></th></tr></thead>
+        <thead><tr><th>Email</th><th>Téléphone</th><th>Rôle</th><th>Accès</th><th>Créé le</th><th></th></tr></thead>
         <tbody>${users.map((u) => {
           const isPresident = u.role === 'president';
           const actions = isPresident
@@ -1549,6 +1738,7 @@ async function documentsList() {
             : (u.permissions || []).map((p) => permLabel[p] || p).join(' • ');
           return `<tr>
             <td class="cell-strong">${esc(u.email)}</td>
+            <td>${u.telephone ? `<span class="mono">${esc(u.telephone)}</span>` : '<span class="muted">—</span>'}</td>
             <td>${esc(roleLabel[u.role] || u.role)}</td>
             <td>${esc(access || '—')}</td>
             <td class="muted">${esc((u.created_at || '').slice(0,10))}</td>
@@ -1578,177 +1768,113 @@ async function documentsList() {
     }
     $('#addUserBtn').onclick = () => {
       openModal('Nouveau compte', `
-        <style>
-          .user-access-dropdown {
-            position:relative;
-            width:100%;
-          }
-          .user-access-trigger {
-            width:100%;
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap:12px;
-            border:1px solid var(--border, #e2e8f0);
-            border-radius:12px;
-            background:var(--card, #fff);
-            color:var(--text);
-            padding:12px 14px;
-            font-size:14px;
-            cursor:pointer;
-            transition:border-color .15s, box-shadow .15s;
-          }
-          .user-access-trigger:hover,
-          .user-access-dropdown.open .user-access-trigger {
-            border-color:var(--gold, #c8a44e);
-            box-shadow:0 0 0 3px rgba(200,164,78,.08);
-          }
-          .user-access-caret {
-            font-size:12px;
-            color:var(--muted,#64748b);
-            transition:transform .15s ease;
-          }
-          .user-access-dropdown.open .user-access-caret {
-            transform:rotate(180deg);
-          }
-          .user-access-menu {
-            display:none;
-            position:absolute;
-            top:calc(100% + 6px);
-            left:0;
-            right:0;
-            z-index:20;
-            background:var(--card, #fff);
-            border:1px solid var(--border, #e2e8f0);
-            border-radius:14px;
-            box-shadow:0 14px 34px rgba(15,23,42,.10);
-            overflow:hidden;
-            max-height:280px;
-            overflow-y:auto;
-          }
-          .user-access-dropdown.open .user-access-menu {
-            display:block;
-          }
-          .user-access-option {
-            display:grid;
-            grid-template-columns:22px 1fr;
-            align-items:start;
-            gap:12px;
-            padding:12px 14px;
-            cursor:pointer;
-            border-bottom:1px solid var(--border, #eef2f7);
-            background:var(--card, #fff);
-            transition:background .15s;
-          }
-          .user-access-option:last-child {
-            border-bottom:none;
-          }
-          .user-access-option:hover {
-            background:rgba(200,164,78,.04);
-          }
-          .user-access-check {
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            padding-top:2px;
-          }
-          .user-access-check input {
-            width:16px;
-            height:16px;
-            margin:0;
-            accent-color:var(--gold, #c8a44e);
-            cursor:pointer;
-          }
-          .user-access-text strong {
-            display:block;
-            color:var(--text);
-            font-size:13px;
-            margin-bottom:4px;
-            line-height:1.3;
-          }
-          .user-access-text small {
-            display:block;
-            color:var(--muted, #64748b);
-            line-height:1.45;
-            font-size:12px;
-          }
-          .user-access-help {
-            margin-top:8px;
-            padding:10px 12px;
-            border-radius:10px;
-            background:#f8fafc;
-            border:1px solid var(--border, #e2e8f0);
-            color:var(--muted, #64748b);
-            font-size:12px;
-            line-height:1.55;
-          }
-        </style>
-        <form id="userForm">
-          <input type="hidden" name="role" value="saisie" />
-          <div class="form-grid">
-            <div class="field"><label>Email *</label><input type="email" name="email" required placeholder="agent@opa.dz" /></div>
-            <div class="field"><label>Mot de passe *</label><input type="text" name="password" required minlength="6" placeholder="6 caractères min." /></div>
-            <div class="field full">
-              <label>Accès utilisateur *</label>
-              <div class="user-access-dropdown" id="userAccessDropdown">
-                <button type="button" class="user-access-trigger" id="userAccessTrigger">
-                  <span id="userAccessLabel">1 accès sélectionné</span>
-                  <span class="user-access-caret">▾</span>
-                </button>
-                <div class="user-access-menu" id="userAccessMenu">
-                  <label class="user-access-option">
-                    <span class="user-access-check"><input type="checkbox" name="permissions" value="adherents_add" data-label="Ajouter des adhérents" checked /></span>
-                    <span class="user-access-text"><strong>Ajouter des adhérents</strong><small>Création d’adhérents normaux uniquement, sans Bureau exécutif.</small></span>
-                  </label>
-                  <label class="user-access-option">
-                    <span class="user-access-check"><input type="checkbox" name="permissions" value="adherents_manage" data-label="Ajouter et modifier les adhérents" /></span>
-                    <span class="user-access-text"><strong>Ajouter et modifier les adhérents</strong><small>Accès à la liste, à la consultation et à la modification des adhérents.</small></span>
-                  </label>
-                  <label class="user-access-option">
-                    <span class="user-access-check"><input type="checkbox" name="permissions" value="demandes_view" data-label="Consulter les demandes" /></span>
-                    <span class="user-access-text"><strong>Consulter les demandes</strong><small>Lecture seule des demandes du site web.</small></span>
-                  </label>
-                  <label class="user-access-option">
-                    <span class="user-access-check"><input type="checkbox" name="permissions" value="demandes_edit" data-label="Consulter et modifier les demandes" /></span>
-                    <span class="user-access-text"><strong>Consulter et modifier les demandes</strong><small>Mise à jour, traitement et clôture des demandes.</small></span>
-                  </label>
-                  <label class="user-access-option">
-                    <span class="user-access-check"><input type="checkbox" name="permissions" value="documents_view" data-label="Consulter les documents des adhérents" /></span>
-                    <span class="user-access-text"><strong>Consulter les documents des adhérents</strong><small>Consultation des dossiers fusionnés et documents liés.</small></span>
-                  </label>
-                </div>
-              </div>
-              <div class="user-access-help">
-                Cliquez sur la liste déroulante puis cochez un ou plusieurs accès.<br>
-                Ce compte ne peut pas changer son mot de passe, ne peut pas faire de sauvegarde et n’a pas accès au Bureau exécutif.
-              </div>
-            </div>
-          </div>
-          <div class="form-error" id="userErr"></div>
-          <div class="modal-foot"><button type="button" class="btn btn-ghost" id="userCancel">Annuler</button>
-          <button type="submit" class="btn btn-gold">Créer le compte</button></div>
-        </form>`);
+  <style>
+    .access-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.access-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.access-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.access-text strong {
+  font-size: 13.5px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.access-text small {
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+.access-item input[type="checkbox"] {
+  order: 2;
+  flex: 0 0 auto;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--blue);
+}
+   </style>
+
+  <form id="userForm">
+    <input type="hidden" name="role" value="saisie" />
+    <div class="form-grid">
+      <div class="field"><label>Email *</label><input type="email" name="email" required placeholder="agent@opa.dz" /></div>
+      <div class="field"><label>Mot de passe *</label><input type="text" name="password" required minlength="6" placeholder="6 caractères min." /></div>
+    </div>
+    
+    <div class="field full">
+      <label>Accès utilisateur *</label>
+      <div class="access-list">
+        <label class="access-item">
+          <span class="access-text">
+            <strong>Ajouter des adhérents</strong>
+            <small>Création d'adhérents normaux uniquement.</small>
+          </span>
+          <input type="checkbox" name="permissions" value="adherents_add" checked />
+        </label>
+        <label class="access-item">
+          <span class="access-text">
+            <strong>Ajouter et modifier les adhérents</strong>
+            <small>Accès à la liste et modification.</small>
+          </span>
+          <input type="checkbox" name="permissions" value="adherents_manage" />
+        </label>
+        <label class="access-item">
+          <span class="access-text">
+            <strong>Consulter les demandes</strong>
+            <small>Lecture seule des demandes.</small>
+          </span>
+          <input type="checkbox" name="permissions" value="demandes_view" />
+        </label>
+        <label class="access-item">
+          <span class="access-text">
+            <strong>Consulter et modifier les demandes</strong>
+            <small>Traitement et clôture des demandes.</small>
+          </span>
+          <input type="checkbox" name="permissions" value="demandes_edit" />
+        </label>
+        <label class="access-item">
+          <span class="access-text">
+            <strong>Consulter les documents</strong>
+            <small>Consultation des documents liés.</small>
+          </span>
+          <input type="checkbox" name="permissions" value="documents_view" />
+        </label>
+      </div>
+    </div>
+    
+    <div class="user-access-help">
+      Cochez les accès nécessaires. Ce compte ne peut pas changer son mot de passe ni accéder au Bureau exécutif.
+    </div>
+    <div class="form-error" id="userErr"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="userCancel">Annuler</button>
+      <button type="submit" class="btn btn-gold">Créer le compte</button>
+    </div>
+  </form>
+`);
       $('#userCancel').onclick = closeModal;
-      const accessDropdown = $('#userAccessDropdown');
-      const accessTrigger = $('#userAccessTrigger');
-      const accessLabel = $('#userAccessLabel');
-      const accessChecks = Array.from(document.querySelectorAll('#userAccessMenu input[name="permissions"]'));
-      function refreshAccessLabel() {
-        const selected = accessChecks.filter((el) => el.checked).map((el) => el.dataset.label);
-        accessLabel.textContent = selected.length === 0
-          ? 'Choisir les accès'
-          : selected.length <= 2
-            ? selected.join(' • ')
-            : `${selected.length} accès sélectionnés`;
-      }
-      accessTrigger.onclick = () => {
-        accessDropdown.classList.toggle('open');
-      };
-      document.addEventListener('click', (ev) => {
-        if (!accessDropdown.contains(ev.target)) accessDropdown.classList.remove('open');
-      });
-      accessChecks.forEach((el) => el.onchange = refreshAccessLabel);
-      refreshAccessLabel();
       $('#userForm').onsubmit = async (e) => {
         e.preventDefault();
         const f = e.target;
@@ -1757,14 +1883,16 @@ async function documentsList() {
           $('#userErr').textContent = 'Choisissez au moins un accès.';
           return;
         }
+        const telValue = f.telephone ? f.telephone.value.trim() : '';
         try {
-          await API.createUser({ email: f.email.value, password: f.password.value, role: f.role.value, permissions });
+          await API.createUser({ email: f.email.value, password: f.password.value, role: 'saisie', permissions, telephone: telValue });
           toast('Compte créé.'); closeModal(); load();
         } catch (err) { $('#userErr').textContent = err.message; }
       };
     };
     load();
   }
+
 
   /* ============ BLACKLIST ============ */
 
@@ -1848,9 +1976,9 @@ async function documentsList() {
         <div class="form-grid">
           <div class="field"><label>Nom *</label><input name="nom" value="${esc(bl?.nom||'')}" required /></div>
           <div class="field"><label>Prénom *</label><input name="prenom" value="${esc(bl?.prenom||'')}" required /></div>
-          <div class="field"><label>Matricule</label><input name="matricule" value="${esc(bl?.matricule||'')}" placeholder="ex: AGN..." /></div>
+          <div class="field"><label>Matricule</label><input name="matricule" value="${esc(bl?.matricule||'')}"  /></div>
           <div class="field"><label>Date blacklist</label><input type="date" name="date_blacklist" value="${esc(bl?.date_blacklist ? fmtDate(bl.date_blacklist) : new Date().toISOString().slice(0,10))}" /></div>
-          <div class="field full"><label>Motif</label><textarea name="motif" rows="3" placeholder="Raison du blacklistage...">${esc(bl?.motif||'')}</textarea></div>
+          <div class="field full"><label>Motif</label><textarea name="motif" rows="3" placeholder="motif du blacklist">${esc(bl?.motif||'')}</textarea></div>
         </div>
         <div class="form-error" id="blFormErr"></div>
         <div class="modal-foot">
@@ -1966,20 +2094,8 @@ async function documentsList() {
         const firstGrid = containerEl.querySelector('.dash-grid');
         if (firstGrid) firstGrid.parentNode.insertBefore(panel, firstGrid);
       }
-      // alerte si blacklist non vide - SANS la phrase "consultez la liste noire..."
-      if (bl.total > 0) {
-        const header = containerEl.querySelector('.dash-header');
-        if (header && !document.getElementById('blAlert')) {
-          const alert = document.createElement('div');
-          alert.id = 'blAlert';
-          alert.className = 'alert-banner';
-          alert.style.cssText = 'background:#fef2f2;color:#991b1b;border:1px solid #fecaca';
-          alert.innerHTML = `<span style="font-size:18px">🚫</span>
-            <span><b>${bl.total} personne${bl.total>1?'s':''} en blacklist</b></span>
-            <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="Views.blacklistList()">Ouvrir la blacklist →</button>`;
-          header.after(alert);
-        }
-      }
+
+      
       // quick action blacklist
       const qa = document.getElementById('qaComptes')?.parentElement;
       if (qa && !document.getElementById('qaBlacklist')) {
