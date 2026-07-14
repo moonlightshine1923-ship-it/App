@@ -102,6 +102,21 @@ export async function initSchema() {
   `);
 
   await query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT,
+      user_email VARCHAR(150),
+      action_type VARCHAR(50) NOT NULL,
+      description TEXT,
+      target_id VARCHAR(50),
+      target_type VARCHAR(50),
+      ip_address VARCHAR(45),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS demandes_site_pieces (
       id BIGINT(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       demande_id BIGINT(20) UNSIGNED NOT NULL,

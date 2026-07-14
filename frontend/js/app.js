@@ -81,7 +81,16 @@
     Views.setRole(role);
     Views.setPermissions(permissions);
 
-    MENU = (role === 'admin' || role === 'president') ? MENU_FULL : buildLimitedMenu(permissions);
+    if (role === 'president') {
+      MENU = [
+        ...MENU_FULL,
+        { id: 'audit', label: "Journal d'audit", icon: '📋', title: "Journal d'audit des actions", render: () => Views.auditList() }
+      ];
+    } else if (role === 'admin') {
+      MENU = MENU_FULL;
+    } else {
+      MENU = buildLimitedMenu(permissions);
+    }
 
     const name = role === 'admin' ? 'Administrateur OPA' : (role === 'president' ? 'Président OPA' : 'Utilisateur autorisé');
     $('#userName').textContent = name;

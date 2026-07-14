@@ -77,7 +77,7 @@ export async function runBackup() {
 // Conserve les N dernières sauvegardes
 function cleanOld() {
   try {
-    const keep = CONFIG.backup.keep || 30;
+    const keep = CONFIG.backup.keep !== undefined ? CONFIG.backup.keep : 30;
     const files = fs.readdirSync(BACKUP_DIR)
       .filter((f) => f.endsWith('.sql'))
       .map((f) => ({ f, t: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))

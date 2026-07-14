@@ -7,6 +7,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { uploadPhoto } from '../middleware/upload.js';
 import { generateMatricule, buildMatricule, nextNumOrdre } from '../matricule.js';
 import { wilayaNom, wilayaNomAr, docTypeLibelle, carteInfo, TYPES, NIVEAUX, DOC_TYPES } from '../data/wilayas.js';
+import { logAction } from '../audit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CARTE_DIR = path.join(__dirname, '..', '..', 'frontend', 'assets', 'carte');
@@ -294,6 +295,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const finalAdherent = enrich(created);
     finalAdherent.matricule = matricule; 
 
+    await logAction(req, 'CREATE_ADHERENT', `Création de l'adhérent ${b.prenom} ${b.nom} (Matricule: ${matricule})`, targetId, 'adherent');
     res.status(201).json({ adherent: finalAdherent });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -342,13 +344,17 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);
     if (upd) upd.matricule = matricule;
+    await logAction(req, 'EDIT_ADHERENT', `Mise à jour de l'adhérent ${b.prenom} ${b.nom} (Matricule: ${matricule})`, a.id, 'adherent');
     res.json({ adherent: enrich(upd) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.delete('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
+    const a = await get('SELECT nom, prenom, matricule FROM adherents WHERE id = ?', [req.params.id]);
+    const nameStr = a ? `${a.prenom} ${a.nom} (Matricule: ${a.matricule || 'N/A'})` : `ID ${req.params.id}`;
     await run('DELETE FROM adherents WHERE id = ?', [req.params.id]);
+    await logAction(req, 'DELETE_ADHERENT', `Suppression de l'adhérent ${nameStr}`, req.params.id, 'adherent');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -385,6 +391,7 @@ router.get('/:id/carte', authenticate, authorize('admin', 'president', 'perm:adh
 
     const ad = enrich(a);
     const info = carteInfo(a);
+    await logAction(req, 'PRINT_CARTE', `Génération/Impression de la carte d'adhérent pour ${a.prenom} ${a.nom} (Matricule: ${a.matricule})`, a.id, 'adherent');
 
     let photoDataUri = '';
     if (a.photo) {
@@ -418,6 +425,7 @@ router.get('/:id/dossier', authenticate, authorize('admin', 'president', 'perm:a
 
     const ad = enrich(a);
     const info = carteInfo(a);
+    await logAction(req, 'PRINT_DOSSIER', `Génération/Impression du dossier d'adhérent pour ${a.prenom} ${a.nom} (Matricule: ${a.matricule})`, a.id, 'adherent');
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(renderDossierHTML(a, ad, info));

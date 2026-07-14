@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -16,6 +17,8 @@ import documentsRoutes from './routes/documents.js';
 import statsRoutes from './routes/stats.js';
 import usersRoutes from './routes/users.js';
 import blacklistRoutes from './routes/blacklist.js';
+import auditRoutes from './routes/audit.js';
+import { logAction } from './audit.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,11 +72,13 @@ app.use('/api/documents', documentsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/blacklist', blacklistRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Sauvegarde manuelle de la base (admin & président)
 app.post('/api/backup', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
     const { fileName } = await runBackup();
+    await logAction(req, 'BACKUP_CREATE', `Création d'une sauvegarde manuelle de la base de données : ${fileName}`, null, 'backup');
     res.json({ ok: true, file: fileName });
   } catch (e) {
     res.status(500).json({ error: 'Sauvegarde échouée : ' + e.message });
@@ -86,7 +91,7 @@ app.get('/api/backup', authenticate, authorize('admin', 'president'), (req, res)
 });
 
 // Téléchargement d'une sauvegarde
-app.get('/api/backup/download', authenticate, authorize('admin', 'president'), (req, res) => {
+app.get('/api/backup/download', authenticate, authorize('admin', 'president'), async (req, res) => {
   const name = req.query.name || '';
   // Sécurité : empêche la traversée de répertoire
   if (!name.endsWith('.sql') || name.includes('/') || name.includes('\\') || name.includes('..')) {
@@ -94,6 +99,7 @@ app.get('/api/backup/download', authenticate, authorize('admin', 'president'), (
   }
   const file = path.join(backupDir(), name);
   if (!fs.existsSync(file)) return res.status(404).json({ error: 'Fichier introuvable.' });
+  await logAction(req, 'BACKUP_DOWNLOAD', `Téléchargement de la sauvegarde : ${name}`, null, 'backup');
   res.download(file, name);
 });
 

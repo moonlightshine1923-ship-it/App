@@ -1651,7 +1651,8 @@ async function documentsList() {
 
     async function loadBackups() {
       try {
-        const list = await API.listBackups();
+        const fullList = await API.listBackups();
+        const list = fullList.slice(0, 1); // Ne garder strictement que la toute dernière sauvegarde pour l'affichage
         const el = $('#backupList');
         if (!list.length) { el.innerHTML = UI.emptyState('💾', 'Aucune sauvegarde pour le moment.'); return; }
         el.innerHTML = `<div class="table-wrap"><table class="data">
@@ -2110,5 +2111,185 @@ async function documentsList() {
     } catch(e){ console.warn('blacklist dashboard', e.message); }
   };
 
-  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList, blacklistList };
+  async function auditList() {
+    const c = container();
+    c.innerHTML = `
+      <div class="panel">
+        <div class="panel-head">
+          <h3>📋 Journal d'audit des actions utilisateurs</h3>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="auditSearch" placeholder="Rechercher par utilisateur, action, description..." style="max-width:350px;" />
+          <select id="auditActionFilter">
+            <option value="">Toutes les actions</option>
+            <option value="LOGIN">Connexion</option>
+            <option value="CHANGE_PASSWORD">Changement MDP</option>
+            <option value="CREATE_USER">Création Utilisateur</option>
+            <option value="EDIT_USER_ROLE">Modification Rôle</option>
+            <option value="EDIT_USER_PASSWORD">Réinitialisation MDP</option>
+            <option value="DELETE_USER">Suppression Utilisateur</option>
+            <option value="CREATE_ADHERENT">Création Adhérent</option>
+            <option value="EDIT_ADHERENT">Modification Adhérent</option>
+            <option value="DELETE_ADHERENT">Suppression Adhérent</option>
+            <option value="PRINT_CARTE">Impression Carte</option>
+            <option value="PRINT_DOSSIER">Impression Dossier</option>
+            <option value="CREATE_BLACKLIST">Ajout Blacklist</option>
+            <option value="EDIT_BLACKLIST">Modification Blacklist</option>
+            <option value="DELETE_BLACKLIST">Retrait Blacklist</option>
+            <option value="EDIT_DEMANDE">Modification Demande</option>
+            <option value="CLOSE_DEMANDE">Clôture Demande</option>
+            <option value="DELETE_DEMANDE">Suppression Demande</option>
+            <option value="MERGE_PDF">Fusion PDF</option>
+            <option value="DELETE_PDF_GROUP">Suppression PDF</option>
+            <option value="BACKUP_CREATE">Sauvegarde BDD</option>
+            <option value="BACKUP_DOWNLOAD">Téléchargement Sauvegarde</option>
+          </select>
+          <div class="spacer"></div>
+          <button class="btn btn-dark" id="btnRefreshAudit">↻ Actualiser</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="auditTable">
+            <thead>
+              <tr>
+                <th>Date / Heure</th>
+                <th>Utilisateur</th>
+                <th>Action</th>
+                <th>Description</th>
+                <th>IP</th>
+                <th>Détails</th>
+              </tr>
+            </thead>
+            <tbody id="auditListBody">
+              <tr><td colspan="6" class="muted" style="text-align:center">Chargement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;" id="auditPagination">
+          <span class="muted" id="auditPaginationInfo">Affichage de 0 à 0 sur 0 entrées</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-dark btn-sm" id="btnPrevAudit" disabled>Précédent</button>
+            <button class="btn btn-dark btn-sm" id="btnNextAudit" disabled>Suivant</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    let page = 0;
+    const limit = 20;
+
+    async function loadLogs() {
+      const q = $('#auditSearch').value;
+      const action = $('#auditActionFilter').value;
+      const offset = page * limit;
+
+      try {
+        const res = await API.audit({ q, action, limit, offset });
+        const logs = res.logs;
+        const total = res.total;
+
+        const body = $('#auditListBody');
+        if (!logs.length) {
+          body.innerHTML = '<tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">Aucun log trouvé.</td></tr>';
+          $('#auditPaginationInfo').textContent = 'Affichage de 0 à 0 sur 0 entrées';
+          $('#btnPrevAudit').disabled = true;
+          $('#btnNextAudit').disabled = true;
+          return;
+        }
+
+        const actionLabels = {
+          LOGIN: '<span class="tag tag-actif">Connexion</span>',
+          CHANGE_PASSWORD: '<span class="tag tag-attente">Changement MDP</span>',
+          CREATE_USER: '<span class="tag tag-gold">Création Utilisateur</span>',
+          EDIT_USER_ROLE: '<span class="tag tag-attente">Modification Rôle</span>',
+          EDIT_USER_PASSWORD: '<span class="tag tag-attente">Réinitialisation MDP</span>',
+          DELETE_USER: '<span class="tag tag-inactif">Suppression Utilisateur</span>',
+          CREATE_ADHERENT: '<span class="tag tag-actif">Création Adhérent</span>',
+          EDIT_ADHERENT: '<span class="tag tag-attente">Modification Adhérent</span>',
+          DELETE_ADHERENT: '<span class="tag tag-inactif">Suppression Adhérent</span>',
+          PRINT_CARTE: '<span class="tag tag-type">Impression Carte</span>',
+          PRINT_DOSSIER: '<span class="tag tag-type">Impression Dossier</span>',
+          CREATE_BLACKLIST: '<span class="tag tag-inactif">Ajout Blacklist</span>',
+          EDIT_BLACKLIST: '<span class="tag tag-suspendu">Modification Blacklist</span>',
+          DELETE_BLACKLIST: '<span class="tag tag-actif">Retrait Blacklist</span>',
+          EDIT_DEMANDE: '<span class="tag tag-attente">Modification Demande</span>',
+          CLOSE_DEMANDE: '<span class="tag tag-actif">Clôture Demande</span>',
+          DELETE_DEMANDE: '<span class="tag tag-inactif">Suppression Demande</span>',
+          MERGE_PDF: '<span class="tag tag-type">Fusion PDF</span>',
+          DELETE_PDF_GROUP: '<span class="tag tag-inactif">Suppression PDF</span>',
+          BACKUP_CREATE: '<span class="tag tag-gold">Sauvegarde BDD</span>',
+          BACKUP_DOWNLOAD: '<span class="tag tag-type">Téléchargement</span>'
+        };
+
+        body.innerHTML = logs.map(l => {
+          const actionBadge = actionLabels[l.action_type] || `<span class="tag">${esc(l.action_type)}</span>`;
+          return `
+            <tr>
+              <td class="cell-strong">${esc(l.created_at.replace('T', ' ').slice(0, 19))}</td>
+              <td><span style="font-weight:600;color:var(--gold-soft);">${esc(l.user_email)}</span></td>
+              <td>${actionBadge}</td>
+              <td style="max-width:350px;white-space:normal;word-break:break-word;">${esc(l.description)}</td>
+              <td class="mono">${esc(l.ip_address)}</td>
+              <td>
+                <button class="btn btn-ghost btn-sm" onclick="Views.showAuditDetail(${l.id})">🔍 Voir</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        const startIdx = offset + 1;
+        const endIdx = Math.min(offset + logs.length, total);
+        $('#auditPaginationInfo').textContent = `Affichage de ${startIdx} à ${endIdx} sur ${total} entrées`;
+        $('#btnPrevAudit').disabled = page === 0;
+        $('#btnNextAudit').disabled = endIdx >= total;
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    $('#auditSearch').oninput = UI.debounce(() => { page = 0; loadLogs(); }, 300);
+    $('#auditActionFilter').onchange = () => { page = 0; loadLogs(); };
+    $('#btnRefreshAudit').onclick = () => { loadLogs(); };
+    $('#btnPrevAudit').onclick = () => { if (page > 0) { page--; loadLogs(); } };
+    $('#btnNextAudit').onclick = () => { page++; loadLogs(); };
+
+    await loadLogs();
+  }
+
+  async function showAuditDetail(id) {
+    try {
+      const res = await API.audit({ q: String(id) });
+      const log = res.logs.find(l => l.id === id);
+      if (!log) {
+        toast('Détail introuvable', 'error');
+        return;
+      }
+
+      openModal('Détails du Log d’Audit', `
+        <div style="padding:10px 0;">
+          <div class="detail-grid">
+            ${detailItem('ID du Log', log.id)}
+            ${detailItem('Date / Heure', log.created_at.replace('T', ' ').slice(0, 19))}
+            ${detailItem('Utilisateur', log.user_email)}
+            ${detailItem('Type d’Action', log.action_type)}
+            ${detailItem('Cible ID', log.target_id || '—')}
+            ${detailItem('Cible Type', log.target_type || '—')}
+            ${detailItem('Adresse IP', log.ip_address || '—')}
+          </div>
+          <div class="panel" style="margin-top:20px;">
+            <div class="panel-head"><h3>Description</h3></div>
+            <div style="padding:14px;line-height:1.6;font-size:14px;background:var(--bg);border-radius:8px;word-break:break-word;">
+              ${esc(log.description)}
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn btn-gold" onclick="UI.closeModal()">Fermer</button>
+          </div>
+        </div>
+      `);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList, blacklistList, auditList, showAuditDetail };
 })();

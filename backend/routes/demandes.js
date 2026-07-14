@@ -2,7 +2,8 @@ import express from 'express';
 import { get, query, run } from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { uploadDoc } from '../middleware/upload.js';
-import { STATUTS_DEMANDE, PRIORITES, WILAYAS, wilayaNom } from '../data/wilayas.js'; // Retrait de TYPES_DEMANDE s'il n'est plus utilisé ici
+import { STATUTS_DEMANDE, PRIORITES, WILAYAS, wilayaNom } from '../data/wilayas.js';
+import { logAction } from '../audit.js'; // Retrait de TYPES_DEMANDE s'il n'est plus utilisé ici
 
 const router = express.Router();
 
@@ -127,6 +128,7 @@ router.patch('/:id', authenticate, authorize('admin', 'president', 'perm:demande
       [b.statut ?? (d.statut || 'En attente'), b.affecte_a ?? (d.affecte_a || null), b.reponse ?? (d.reponse || null),
         (b.priorite && PRIORITES.includes(b.priorite)) ? b.priorite : (d.priorite || 'Normale'), d.id]
     );
+    await logAction(req, 'EDIT_DEMANDE', `Modification de la demande ${d.numero} (Nouveau statut: ${b.statut ?? d.statut})`, d.id, 'demande');
     res.json(await enrich(await get('SELECT * FROM demandes_site WHERE id = ?', [d.id])));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -135,14 +137,19 @@ router.patch('/:id/cloturer', authenticate, authorize('admin', 'president', 'per
   try {
     const r = await run("UPDATE demandes_site SET statut='Clôturée' WHERE id=?", [req.params.id]);
     if (!r.affectedRows) return res.status(404).json({ error: 'Demande introuvable.' });
+    const updatedDem = await get('SELECT numero FROM demandes_site WHERE id = ?', [req.params.id]);
+    await logAction(req, 'CLOSE_DEMANDE', `Clôture de la demande ${updatedDem ? updatedDem.numero : 'ID ' + req.params.id}`, req.params.id, 'demande');
     res.json(await enrich(await get('SELECT * FROM demandes_site WHERE id = ?', [req.params.id])));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.delete('/:id', authenticate, authorize('admin', 'president', 'perm:demandes_edit'), async (req, res) => {
   try {
+    const d = await get('SELECT numero FROM demandes_site WHERE id = ?', [req.params.id]);
+    const numStr = d ? d.numero : `ID ${req.params.id}`;
     const r = await run('DELETE FROM demandes_site WHERE id = ?', [req.params.id]);
     if (!r.affectedRows) return res.status(404).json({ error: 'Demande introuvable.' });
+    await logAction(req, 'DELETE_DEMANDE', `Suppression de la demande ${numStr}`, req.params.id, 'demande');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

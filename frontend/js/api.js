@@ -105,6 +105,12 @@ const API = (() => {
     deleteBlacklist: (id) => request('DELETE', '/blacklist/' + id),
     blacklistAdherent: (adherentId, data = {}) => request('POST', `/blacklist/adherent/${adherentId}`, data),
 
+    // --- AUDIT ---
+    audit: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request('GET', '/audit' + (q ? '?' + q : ''));
+    },
+
     // Renvoie un blob URL authentifié pour un fichier protégé
     fileUrl: async (relPath) => {
       const res = await fetch('/uploads/' + relPath, {

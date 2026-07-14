@@ -63,5 +63,13 @@ const UI = (() => {
     return `<div class="empty"><div class="empty-ico">${icon}</div><p>${esc(text)}</p></div>`;
   }
 
-  return { $, $$, esc, toast, openModal, closeModal, confirm, statutTag, prioriteTag, niveauTag, typeTag, initials, emptyState };
+  function debounce(fn, delay) {
+    let timeout;
+    return function (...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
+  }
+
+  return { $, $$, esc, toast, openModal, closeModal, confirm, statutTag, prioriteTag, niveauTag, typeTag, initials, emptyState, debounce };
 })();

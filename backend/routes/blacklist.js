@@ -1,6 +1,7 @@
 import express from 'express';
 import { query, get, run } from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { logAction } from '../audit.js';
 
 const router = express.Router();
 
@@ -73,6 +74,7 @@ router.post('/', authenticate, authorize('admin', 'president'), async (req, res)
       VALUES (?,?,?,?,?,?,?)
     `, [ adh ? adh.id : (adherent_id || null), finalNom, finalPrenom, finalMatricule, motif || null, date_bl, req.user.id || null ]);
     const created = await get('SELECT * FROM blacklist WHERE id = ?', [result.insertId]);
+    await logAction(req, 'CREATE_BLACKLIST', `Ajout à la liste noire de ${finalPrenom} ${finalNom} (Motif: ${motif || 'Non spécifié'})`, result.insertId, 'blacklist');
     res.status(201).json({ ok: true, blacklist: created });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -89,13 +91,20 @@ router.patch('/:id', authenticate, authorize('admin', 'president'), async (req, 
     params.push(req.params.id);
     await run(`UPDATE blacklist SET ${updates.join(', ')} WHERE id = ?`, params);
     const updated = await get('SELECT * FROM blacklist WHERE id = ?', [req.params.id]);
+    await logAction(req, 'EDIT_BLACKLIST', `Mise à jour de l'entrée liste noire pour ${updated ? updated.prenom + ' ' + updated.nom : 'ID ' + req.params.id}`, req.params.id, 'blacklist');
     res.json({ ok: true, blacklist: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Supprimer
 router.delete('/:id', authenticate, authorize('admin', 'president'), async (req, res) => {
-  try { await run('DELETE FROM blacklist WHERE id = ?', [req.params.id]); res.json({ ok: true }); }
+  try {
+    const b = await get('SELECT nom, prenom FROM blacklist WHERE id = ?', [req.params.id]);
+    const nameStr = b ? `${b.prenom} ${b.nom}` : `ID ${req.params.id}`;
+    await run('DELETE FROM blacklist WHERE id = ?', [req.params.id]);
+    await logAction(req, 'DELETE_BLACKLIST', `Retrait de la liste noire de ${nameStr}`, req.params.id, 'blacklist');
+    res.json({ ok: true });
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 

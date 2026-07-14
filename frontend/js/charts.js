@@ -1,6 +1,6 @@
 // ===== Graphiques SVG (sans dépendance externe) =====
 const Charts = (() => {
-  const GOLD = ['#c39b2e', '#d9b94e', '#9a7b22', '#e6c75f', '#b8902a', '#7d6219', '#cba93f', '#8a6c1e'];
+  const GOLD = ['#2563eb', '#0d9488', '#4f46e5', '#64748b', '#06b6d4', '#4338ca', '#0f766e', '#1e40af'];
 
   // Donut chart -> renvoie HTML (svg + légende)
   function donut(data, { size = 170 } = {}) {
@@ -32,10 +32,10 @@ const Charts = (() => {
     }).join('');
     return `<div class="donut-wrap">
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ece6d8" stroke-width="${stroke}"></circle>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="${stroke}"></circle>
         ${segs}
-        <text x="${cx}" y="${cy - 4}" text-anchor="middle" fill="#25221b" font-size="26" font-weight="700">${total}</text>
-        <text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#908875" font-size="11">Total</text>
+        <text x="${cx}" y="${cy - 4}" text-anchor="middle" fill="#0f172a" font-size="26" font-weight="700">${total}</text>
+        <text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#94a3b8" font-size="11">Total</text>
       </svg>
       <div class="donut-legend">${legend}</div>
     </div>`;
@@ -71,20 +71,20 @@ const Charts = (() => {
     const area = path + ` L${pts[pts.length - 1].x.toFixed(1)} ${(pad.t + h).toFixed(1)} L${pts[0].x.toFixed(1)} ${(pad.t + h).toFixed(1)} Z`;
     const grid = [0, 0.5, 1].map((f) => {
       const y = pad.t + h - f * h;
-      return `<line x1="${pad.l}" y1="${y}" x2="${width - pad.r}" y2="${y}" stroke="#e2dccb" stroke-width="1"></line>
-        <text x="${pad.l - 8}" y="${y + 4}" text-anchor="end" fill="#908875" font-size="10">${Math.round(max * f)}</text>`;
+      return `<line x1="${pad.l}" y1="${y}" x2="${width - pad.r}" y2="${y}" stroke="#e2e8f0" stroke-width="1"></line>
+        <text x="${pad.l - 8}" y="${y + 4}" text-anchor="end" fill="#94a3b8" font-size="10">${Math.round(max * f)}</text>`;
     }).join('');
-    const labels = pts.map((p) => `<text x="${p.x}" y="${height - 8}" text-anchor="middle" fill="#5f594b" font-size="11">${UI.esc(p.d.label)}</text>`).join('');
-    const dots = pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#c39b2e" stroke="#ffffff" stroke-width="2"></circle>
-      <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" fill="#b8902a" font-size="11" font-weight="600">${p.d.value}</text>`).join('');
+    const labels = pts.map((p) => `<text x="${p.x}" y="${height - 8}" text-anchor="middle" fill="#475569" font-size="11">${UI.esc(p.d.label)}</text>`).join('');
+    const dots = pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="#2563eb" stroke="#ffffff" stroke-width="2"></circle>
+      <text x="${p.x}" y="${p.y - 10}" text-anchor="middle" fill="#1d4ed8" font-size="11" font-weight="600">${p.d.value}</text>`).join('');
     return `<svg width="100%" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
       <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="rgba(195,155,46,0.30)"></stop>
-        <stop offset="100%" stop-color="rgba(195,155,46,0)"></stop>
+        <stop offset="0%" stop-color="rgba(37,99,235,0.20)"></stop>
+        <stop offset="100%" stop-color="rgba(37,99,235,0)"></stop>
       </linearGradient></defs>
       ${grid}
       <path d="${area}" fill="url(#areaGrad)"></path>
-      <path d="${path}" fill="none" stroke="#c39b2e" stroke-width="2.5"></path>
+      <path d="${path}" fill="none" stroke="#2563eb" stroke-width="2.5"></path>
       ${dots}${labels}
     </svg>`;
   }

@@ -5,6 +5,7 @@ import PDFMerger from 'pdf-merger-js';
 import { query, run, get } from '../db.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { uploadDoc } from '../middleware/upload.js';
+import { logAction } from '../audit.js';
 
 const router = express.Router();
 
@@ -62,6 +63,10 @@ router.post('/fusionner/:adherentId', authenticate, authorize('admin', 'presiden
         [adherentId, 'Dossier Complet Fusionné', cheminRelatifPourBDD, nomsOrigine]);
     }
 
+    const adh = await get('SELECT nom, prenom, matricule FROM adherents WHERE id = ?', [adherentId]);
+    const adhStr = adh ? `${adh.prenom} ${adh.nom} (Matricule: ${adh.matricule || 'N/A'})` : `ID ${adherentId}`;
+    await logAction(req, 'MERGE_PDF', `Fusion de documents PDF pour l'adhérent ${adhStr}`, adherentId, 'adherent');
+
     res.json({ success: true, message: 'Fusion réussie.' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -85,6 +90,8 @@ router.post('/suppression-groupes', authenticate, authorize('admin', 'president'
     // Suppression BDD
     const placeholders = ids.map(() => '?').join(',');
     await run(`DELETE FROM documents WHERE adherent_id IN (${placeholders})`, ids);
+
+    await logAction(req, 'DELETE_PDF_GROUP', `Suppression groupée des dossiers fusionnés pour les adhérents ID [${ids.join(', ')}]`, null, 'document');
 
     res.json({ success: true, message: 'Dossiers supprimés avec succès.' });
   } catch (e) {
