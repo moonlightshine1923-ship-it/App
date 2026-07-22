@@ -1,8 +1,25 @@
-import 'dotenv/config';
-import express from 'express';
-import path from 'path';
-import fs from 'fs';
+// ============================================================
+// server.js — Version corrigée pour cPanel / Passenger
+// ============================================================
+// CORRECTIONS :
+// 1. dotenv charge .env depuis le bon répertoire (pas cwd)
+// 2. app.listen() SEULEMENT si lancé directement (node server.js)
+// 3. Pas de process.exit() — l'app répond même si DB indisponible
+// 4. Export de l'app pour app.cjs (Passenger)
+// ============================================================
+
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
+
+// ── CORRECTION 1 : Charger .env depuis le répertoire du projet ──
+dotenv.config({ path: path.join(ROOT, '.env') });
+
+import express from 'express';
+import fs from 'fs';
 import { connect } from './db.js';
 import { ensureSeed } from './seed.js';
 import { authenticate, authorize } from './middleware/auth.js';
@@ -20,50 +37,48 @@ import blacklistRoutes from './routes/blacklist.js';
 import auditRoutes from './routes/audit.js';
 import { logAction } from './audit.js';
 
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, '..');
-
 const app = express();
 app.disable('x-powered-by');
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    db: app.locals.dbReady ? 'connected' : 'disconnected'
+  });
+});
 
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy', "default-src 'self' data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self' data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+  );
   next();
 });
 
-// CORS pour autoriser le site React Site-2
 app.use((req, res, next) => {
   const allowedOrigins = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
+    'https://app.opa.dz'
   ];
-
   const origin = req.headers.origin;
-
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
-
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
-
   next();
 });
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// API
 app.use('/api/auth', authRoutes);
 app.use('/api/reference', referenceRoutes);
 app.use('/api/adherents', adherentsRoutes);
@@ -74,26 +89,22 @@ app.use('/api/users', usersRoutes);
 app.use('/api/blacklist', blacklistRoutes);
 app.use('/api/audit', auditRoutes);
 
-// Sauvegarde manuelle de la base (admin & président)
 app.post('/api/backup', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {
     const { fileName } = await runBackup();
-    await logAction(req, 'BACKUP_CREATE', `Création d'une sauvegarde manuelle de la base de données : ${fileName}`, null, 'backup');
+    await logAction(req, 'BACKUP_CREATE', `Création d'une sauvegarde manuelle : ${fileName}`, null, 'backup');
     res.json({ ok: true, file: fileName });
   } catch (e) {
     res.status(500).json({ error: 'Sauvegarde échouée : ' + e.message });
   }
 });
 
-// Liste des sauvegardes existantes
 app.get('/api/backup', authenticate, authorize('admin', 'president'), (req, res) => {
   res.json(listBackups());
 });
 
-// Téléchargement d'une sauvegarde
 app.get('/api/backup/download', authenticate, authorize('admin', 'president'), async (req, res) => {
   const name = req.query.name || '';
-  // Sécurité : empêche la traversée de répertoire
   if (!name.endsWith('.sql') || name.includes('/') || name.includes('\\') || name.includes('..')) {
     return res.status(400).json({ error: 'Nom de fichier invalide.' });
   }
@@ -103,10 +114,8 @@ app.get('/api/backup/download', authenticate, authorize('admin', 'president'), a
   res.download(file, name);
 });
 
-// Fichiers uploadés (protégés)
 app.use('/uploads', authenticate, express.static(path.join(ROOT, 'uploads')));
 
-// Front-end statique (avec désactivation complète du cache navigateur)
 app.use(express.static(path.join(ROOT, 'frontend'), {
   etag: false,
   maxAge: 0,
@@ -116,32 +125,35 @@ app.use(express.static(path.join(ROOT, 'frontend'), {
     res.setHeader('Expires', '0');
   }
 }));
+
 app.use((req, res) => {
   res.sendFile(path.join(ROOT, 'frontend', 'index.html'));
 });
 
-// Gestion d'erreurs (uploads volumineux, etc.)
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
 });
 
-const PORT = process.env.PORT || 3003;
+// ── Initialisation DB (sans process.exit !) ──
+app.locals.dbReady = false;
 
 (async () => {
   try {
     await connect();
     await ensureSeed();
-    scheduleAutoBackup();         // sauvegarde automatique (jeudi 16h par défaut)
-    app.listen(PORT, () => {
-      console.log(`\n  OPA — Organisation des Patronats d'Algérie`);
-      console.log(`  Base MySQL connectée (${CONFIG.db.name})`);
-      console.log(`  Serveur démarré sur http://localhost:${PORT}\n`);
-    });
+    scheduleAutoBackup();
+    app.locals.dbReady = true;
+    console.log(`OPA — Base MySQL connectée (${CONFIG.db.name})`);
   } catch (err) {
-    console.error('\n  ❌ Impossible de se connecter à MySQL.');
-    console.error('  Vérifiez que MySQL (XAMPP) est démarré et que la base est accessible.');
-    console.error('  Détail :', err.message, '\n');
-    process.exit(1);
+    console.error('Impossible de se connecter à MySQL :', err.message);
   }
 })();
+
+// Démarrer le serveur (local uniquement)
+const PORT = process.env.PORT || 3003;
+app.listen(PORT, () => {
+  console.log(`Serveur démarré sur http://localhost:${PORT}`);
+});
+// ── CORRECTION 3 : Export pour app.cjs / Passenger ──
+export default app;

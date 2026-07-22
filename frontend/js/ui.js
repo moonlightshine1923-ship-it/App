@@ -53,7 +53,17 @@ const UI = (() => {
     if (!n || n === 'Adhérent Simple' || n === 'Adhérent simple') return `<span class="muted">Carte Simple</span>`;
     return `<span class="tag tag-gold">★ Carte Gold</span>`;
   }
-  function typeTag(libelle) { return `<span class="tag tag-type">${esc(libelle)}</span>`; }
+  function typeTag(libelle) {
+ const colors = {
+ 'Adhérent Simple': '#c49b2e',
+ 'Adhérent Gold': '#c49b2e',
+ 'Membre Actif': '#d4873a',
+ 'Conseiller': '#1a1a1a',
+ };
+ const bg = colors[libelle] || '#c49b2e';
+ const textColor = bg === '#1a1a1a' ? '#ffffff' : '#ffffff';
+ return `<span class="tag" style="background:${bg};color:${textColor}">${esc(libelle)}</span>`;
+}
 
   function initials(prenom, nom) {
     return ((prenom || '')[0] || '') + ((nom || '')[0] || '');

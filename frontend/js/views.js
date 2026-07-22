@@ -320,10 +320,10 @@ const Views = (() => {
 
       <!-- KPI PRINCIPAUX -->
       <div class="kpi-row">
-        ${kpiCard('total', '👥', s.totalAdherents, 'Total adhérents', `${s.nouveauxMois} nouveau${s.nouveauxMois > 1 ? 'x' : ''} ce mois`, '#3b82f6')}
-        ${kpiCard('ad', '▣', a.AD, 'Adhérents (AD)', `dont ${a.gold} Gold`, '#6366f1')}
-        ${kpiCard('ma', '⬡', a.MA, 'Membres Actifs (MA)', `${a.MA ? ((a.MA/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#0891b2')}
-        ${kpiCard('cr', '◆', a.CR, 'Conseillers (CR)', `${a.CR ? ((a.CR/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#7c3aed')}
+        ${kpiCard('total', '👥', s.totalAdherents, 'Total adhérents', `${s.nouveauxMois} nouveau${s.nouveauxMois > 1 ? 'x' : ''} ce mois`, '#888888')}
+        ${kpiCard('ad', '▣', a.AD, 'Adhérents (AD)', `dont ${a.gold} Gold`, '#c49b2e')}
+        ${kpiCard('ma', '⬡', a.MA, 'Membres Actifs (MA)', `${a.MA ? ((a.MA/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#d4873a')}
+        ${kpiCard('cr', '◆', a.CR, 'Conseillers (CR)', `${a.CR ? ((a.CR/s.totalAdherents)*100).toFixed(1) : 0}% du total`, '#1a1a1a')}
         ${kpiCard('be', '🏛️', s.totalBureauExecutif || 0, 'Bureau exécutif', 'Rubrique séparée', '#8b5cf6')}
         ${kpiCard('ouvertes', '📨', s.demandes.ouvertes, 'Demandes ouvertes', 'En attente de traitement', '#f59e0b')}
         ${kpiCard('cloturees', '✓', s.demandes.cloturees, 'Demandes clôturées', `Taux : ${tauxTraitement}%`, '#10b981')}
@@ -334,15 +334,16 @@ const Views = (() => {
         <div class="dash-panel">
           <div class="dash-panel-head"><h3>▣ Répartition par type</h3></div>
           <div class="dash-panel-body">
-            ${Charts.donut([
-              { label: 'Adhérent (AD)', value: a.AD },
-              { label: 'Membre Actif (MA)', value: a.MA },
-              { label: 'Conseiller (CR)', value: a.CR },
+          
+          ${Charts.donut([
+                { label: 'Adhérent (AD)', value: a.AD, color: '#c49b2e' },
+                { label: 'Membre Actif (MA)', value: a.MA, color: '#d4873a' },
+                { label: 'Conseiller (CR)', value: a.CR, color: '#1a1a1a' },
             ])}
             <div style="margin-top:14px">
-              ${metricBar('Adhérent', a.AD, s.totalAdherents, '#6366f1')}
-              ${metricBar('Membre Actif', a.MA, s.totalAdherents, '#0891b2')}
-              ${metricBar('Conseiller', a.CR, s.totalAdherents, '#7c3aed')}
+                ${metricBar('Adhérent', a.AD, s.totalAdherents, '#c49b2e')}
+                ${metricBar('Membre Actif', a.MA, s.totalAdherents, '#d4873a')}
+                ${metricBar('Conseiller', a.CR, s.totalAdherents, '#1a1a1a')}
             </div>
           </div>
         </div>
@@ -438,7 +439,7 @@ const Views = (() => {
                       <td>
                         <div style="display:flex;align-items:center;gap:8px">
                           <div class="progress-bar-wrap" style="flex:1;max-width:80px">
-                            <div class="progress-bar-fill" style="width:${s.totalAdherents ? (w.count/s.totalAdherents*100) : 0}%;background:#3b82f6"></div>
+                            <div class="progress-bar-fill" style="width:${s.totalAdherents ? (w.count/s.totalAdherents*100) : 0}%;background:#c49b2e"></div>
                           </div>
                           <span style="font-size:11px;color:var(--muted, #94a3b8)">${s.totalAdherents ? (w.count/s.totalAdherents*100).toFixed(1) : 0}%</span>
                         </div>
@@ -502,15 +503,13 @@ const Views = (() => {
   }
 
   function kpiCard(id, ico, val, lbl, sub, color) {
-    return `
-      <div class="kpi" id="kpi-${id}">
-        <div class="kpi-accent" style="background:${color}"></div>
-        <div class="kpi-ico" style="background:${color}15;color:${color}">${ico}</div>
-        <div class="kpi-val">${val}</div>
-        <div class="kpi-lbl">${esc(lbl)}</div>
-        <div class="kpi-sub">${esc(sub)}</div>
-      </div>`;
-  }
+return `<div class="stat-card" style="--kpi-color:${color}">
+<div class="stat-ico" style="color:${color};background:${color}18">${ico}</div>
+<div class="stat-val">${val}</div>
+<div class="stat-lbl">${esc(lbl)}</div>
+<div class="muted">${esc(sub)}</div>
+</div>`;
+}
 
   function metricBar(label, value, total, color) {
     const pct = total ? (value / total * 100).toFixed(1) : 0;
@@ -666,6 +665,7 @@ const Views = (() => {
         <th>${isBureau ? 'Wilaya' : 'Type'}</th>
         <th>${isBureau ? 'Adhésion' : 'Étoiles'}</th>
         <th>${isBureau ? '' : 'Fin adhésion'}</th>
+        <th>${isBureau ? '' : 'Payé'}</th>
         <th></th>
       </tr></thead><tbody>
       ${list.map((a) => {
@@ -684,6 +684,7 @@ const Views = (() => {
         <td>${isBureau ? esc(a.wilaya_nom || '—') : UI.typeTag(a.type_libelle || '—')}</td>
         <td>${isBureau ? `<span class="muted">${esc(fmtDate(a.date_adhesion))}</span>` : renderStars(a.etoiles)}</td>
         <td>${isBureau ? '' : expiryHtml}</td>
+        <td>${isBureau ? '' : (a.paiement_mode === 'non_assujetti' ? '<span class="tag" style="background:#f0ead8;color:#8a6e18">⊘ Non assujetti</span>' : a.paiement_mode ? '<span class="tag tag-actif">✓ Oui</span>' : '<span class="tag tag-inactif">✕ Non</span>')}</td>
         <td><div class="row-actions">
           <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
           ${isBureau ? '' : `<button class="btn btn-gold btn-sm" data-renew="${a.id}">Renouveler</button>`}
@@ -829,6 +830,11 @@ openModal(
       </div>
 
       <div class="field">
+        <label>Nom de société</label>
+        <input name="nom_soc" value="${esc(adh?.nom_soc || '')}"  />
+      </div>
+
+      <div class="field">
         <label>Téléphone</label>
         <input name="telephone" value="${esc(adh?.telephone || '')}" />
       </div>
@@ -960,42 +966,40 @@ openModal(
         </select>
       </div>
 
-      <div class="field full">
-        <label>Mode de paiement</label>
-
-        <div class="paiement-options">
-          <label class="paiement-option">
-            <input type="radio" name="paiement_mode" value="" ${!currPaiementMode ? 'checked' : ''} />
-            <span>Non renseigné</span>
-          </label>
-
-          <label class="paiement-option">
-            <input type="radio" name="paiement_mode" value="cheque" ${currPaiementMode === 'cheque' ? 'checked' : ''} />
-            <span>Chèque</span>
-          </label>
-
-          <label class="paiement-option">
-            <input type="radio" name="paiement_mode" value="espece" ${currPaiementMode === 'espece' ? 'checked' : ''} />
-            <span>Espèce</span>
-          </label>
-
-          <label class="paiement-option">
-            <input type="radio" name="paiement_mode" value="virement" ${currPaiementMode === 'virement' ? 'checked' : ''} />
-            <span>Virement</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="field" id="fPaiementRefWrap">
-        <label id="fPaiementRefLabel">Référence</label>
-        <input name="paiement_ref" id="fPaiementRef" value="${esc(currPaiementRef)}" />
-        <small class="muted" id="fPaiementRefHint"></small>
-      </div>
-
-      <div class="field" id="fPaiementBanqueWrap">
-        <label id="fPaiementBanqueLabel">Banque</label>
-        <input name="paiement_banque" id="fPaiementBanque" value="${esc(currPaiementBanque)}" />
-      </div>
+     <div class="field full" id="fNonAssujettiWrap">
+  <input type="checkbox" id="fNonAssujetti" name="non_assujetti" ${currPaiementMode === 'non_assujetti' ? 'checked' : ''}>
+  <label for="fNonAssujetti">Non assujetti</label>
+</div>
+<div class="field full" id="fPaiementModeWrap">
+  <label>Mode de paiement</label>
+  <div class="paiement-options">
+    <label class="paiement-option">
+      <input type="radio" name="paiement_mode" value="" ${!currPaiementMode ? 'checked' : ''} />
+      <span>Non renseigné</span>
+    </label>
+    <label class="paiement-option">
+      <input type="radio" name="paiement_mode" value="cheque" ${currPaiementMode === 'cheque' ? 'checked' : ''} />
+      <span>Chèque</span>
+    </label>
+    <label class="paiement-option">
+      <input type="radio" name="paiement_mode" value="espece" ${currPaiementMode === 'espece' ? 'checked' : ''} />
+      <span>Espèce</span>
+    </label>
+    <label class="paiement-option">
+      <input type="radio" name="paiement_mode" value="virement" ${currPaiementMode === 'virement' ? 'checked' : ''} />
+      <span>Virement</span>
+    </label>
+  </div>
+</div>
+<div class="field" id="fPaiementRefWrap">
+  <label id="fPaiementRefLabel">Référence</label>
+  <input name="paiement_ref" id="fPaiementRef" value="${esc(currPaiementRef)}" />
+  <small class="muted" id="fPaiementRefHint"></small>
+</div>
+<div class="field" id="fPaiementBanqueWrap">
+  <label id="fPaiementBanqueLabel">Banque</label>
+  <input name="paiement_banque" id="fPaiementBanque" value="${esc(currPaiementBanque)}" />
+</div>
 
       <div class="field full">
         <label>Description / Notes</label>
@@ -1052,59 +1056,75 @@ openModal(
     }
 
     function updatePaiementFields() {
-      const mode = document.querySelector('input[name="paiement_mode"]:checked')?.value || '';
-      const refWrap = $('#fPaiementRefWrap');
-      const bankWrap = $('#fPaiementBanqueWrap');
-      const refInput = $('#fPaiementRef');
-      const bankInput = $('#fPaiementBanque');
-      const refLabel = $('#fPaiementRefLabel');
-      const bankLabel = $('#fPaiementBanqueLabel');
-      const refHint = $('#fPaiementRefHint');
+ const nonAssujetti = $('#fNonAssujetti') && $('#fNonAssujetti').checked;
+ const mode = nonAssujetti ? '' : (document.querySelector('input[name="paiement_mode"]:checked')?.value || '');
+ const refWrap = $('#fPaiementRefWrap');
+ const bankWrap = $('#fPaiementBanqueWrap');
+ const refInput = $('#fPaiementRef');
+ const bankInput = $('#fPaiementBanque');
+ const refLabel = $('#fPaiementRefLabel');
+ const bankLabel = $('#fPaiementBanqueLabel');
+ const refHint = $('#fPaiementRefHint');
+ const modeWrap = $('#fPaiementModeWrap');
 
-      refInput.minLength = 0;
-      refInput.maxLength = 524288;
-      refInput.removeAttribute('pattern');
-      refInput.removeAttribute('inputmode');
-      refHint.textContent = '';
+ if (nonAssujetti) {
+  modeWrap.style.display = 'none';
+  refWrap.style.display = 'none';
+  bankWrap.style.display = 'none';
+  refInput.required = false;
+  bankInput.required = false;
+  refInput.value = '';
+  bankInput.value = '';
+  document.querySelectorAll('input[name="paiement_mode"]').forEach(el => { if (el.id !== 'fNonAssujetti') el.checked = false; });
+  return;
+ }
 
-      if (mode === 'cheque') {
-        refWrap.style.display = '';
-        bankWrap.style.display = '';
-        refLabel.textContent = 'Numéro de chèque *';
-        bankLabel.textContent = 'Banque *';
-        refInput.placeholder = '7 chiffres';
-        bankInput.placeholder = 'Nom de la banque';
-        refInput.required = true;
-        bankInput.required = true;
-        refInput.minLength = 7;
-        refInput.maxLength = 7;
-        refInput.setAttribute('pattern', '[0-9]{7}');
-        refInput.setAttribute('inputmode', 'numeric');
-        refHint.textContent = 'Le numéro de chèque doit contenir exactement 7 chiffres.';
-      } else if (mode === 'virement') {
-        refWrap.style.display = 'none';
-        bankWrap.style.display = '';
-        bankLabel.textContent = 'Information virement *';
-        bankInput.placeholder = "Information sur le virement ";
-        refInput.required = false;
-        bankInput.required = true;
-        refInput.value = '';
-      } else if (mode === 'espece') {
-        refWrap.style.display = 'none';
-        bankWrap.style.display = 'none';
-        refInput.required = false;
-        bankInput.required = false;
-        refInput.value = '';
-        bankInput.value = '';
-      } else {
-        refWrap.style.display = 'none';
-        bankWrap.style.display = 'none';
-        refInput.required = false;
-        bankInput.required = false;
-        refInput.value = '';
-        bankInput.value = '';
-      }
-    }
+ modeWrap.style.display = '';
+
+ refInput.minLength = 0;
+ refInput.maxLength = 524288;
+ refInput.removeAttribute('pattern');
+ refInput.removeAttribute('inputmode');
+ refHint.textContent = '';
+
+ if (mode === 'cheque') {
+  refWrap.style.display = '';
+  bankWrap.style.display = '';
+  refLabel.textContent = 'Numéro de chèque *';
+  bankLabel.textContent = 'Banque *';
+  refInput.placeholder = '7 chiffres';
+  bankInput.placeholder = 'Nom de la banque';
+  refInput.required = true;
+  bankInput.required = true;
+  refInput.minLength = 7;
+  refInput.maxLength = 7;
+  refInput.setAttribute('pattern', '[0-9]{7}');
+  refInput.setAttribute('inputmode', 'numeric');
+  refHint.textContent = 'Le numéro de chèque doit contenir exactement 7 chiffres.';
+ } else if (mode === 'virement') {
+  refWrap.style.display = 'none';
+  bankWrap.style.display = '';
+  bankLabel.textContent = 'Information virement *';
+  bankInput.placeholder = 'Information sur le virement';
+  refInput.required = false;
+  bankInput.required = true;
+  refInput.value = '';
+ } else if (mode === 'espece') {
+  refWrap.style.display = 'none';
+  bankWrap.style.display = 'none';
+  refInput.required = false;
+  bankInput.required = false;
+  refInput.value = '';
+  bankInput.value = '';
+ } else {
+  refWrap.style.display = 'none';
+  bankWrap.style.display = 'none';
+  refInput.required = false;
+  bankInput.required = false;
+  refInput.value = '';
+  bankInput.value = '';
+ }
+}
 
     async function refreshMatricule() {
       const w = $('#fWilaya').value;
@@ -1136,6 +1156,7 @@ openModal(
       refreshMatricule();
     };
     document.querySelectorAll('input[name="paiement_mode"]').forEach((el) => el.onchange = updatePaiementFields);
+    if ($('#fNonAssujetti')) $('#fNonAssujetti').onchange = updatePaiementFields;
     $('#fDate').onchange = refreshMatricule;
     updateDocHint();
     updateMemberTypeFields();
@@ -1147,6 +1168,7 @@ openModal(
       e.preventDefault();
       $('#adhFormErr').textContent = '';
       const fd = new FormData(e.target);
+      if ($('#fNonAssujetti') && $('#fNonAssujetti').checked) { fd.set('paiement_mode', 'non_assujetti'); fd.delete('paiement_ref'); fd.delete('paiement_banque'); }
       try {
         let saved = null;
         if (isEdit) {
@@ -1184,6 +1206,7 @@ openModal(
       <div class="detail-grid">
         ${detailItem('Nom (Français)', a.nom || '—')}
         ${detailItem('Prénom (Français)', a.prenom || '—')}
+        ${a.nom_soc ? detailItem('Nom de société', a.nom_soc) : ''}
         ${detailItem('Nom (Arabe)', a.nom_ar || '—')}
         ${detailItem('Prénom (Arabe)', a.prenom_ar || '—')}
         ${detailItem('Téléphone', a.telephone || '—')}
@@ -2155,8 +2178,6 @@ async function documentsList() {
                 <th>Utilisateur</th>
                 <th>Action</th>
                 <th>Description</th>
-                <th>IP</th>
-                <th>Détails</th>
               </tr>
             </thead>
             <tbody id="auditListBody">
@@ -2228,10 +2249,6 @@ async function documentsList() {
               <td><span style="font-weight:600;color:var(--gold-soft);">${esc(l.user_email)}</span></td>
               <td>${actionBadge}</td>
               <td style="max-width:350px;white-space:normal;word-break:break-word;">${esc(l.description)}</td>
-              <td class="mono">${esc(l.ip_address)}</td>
-              <td>
-                <button class="btn btn-ghost btn-sm" onclick="Views.showAuditDetail(${l.id})">🔍 Voir</button>
-              </td>
             </tr>
           `;
         }).join('');

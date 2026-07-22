@@ -45,16 +45,29 @@ function enrich(a) {
   };
 }
 
+/* ──────────────────────────────────────────────
+   FIX 1 : normalizePaiementMode — ajout de 'non_assujetti'
+   ────────────────────────────────────────────── */
 function normalizePaiementMode(mode) {
   const m = String(mode || '').trim().toLowerCase();
   if (['cheque', 'chèque'].includes(m)) return 'cheque';
   if (['espece', 'espèce', 'especes', 'espèces'].includes(m)) return 'espece';
   if (m === 'virement') return 'virement';
+  if (m === 'non_assujetti') return 'non_assujetti';
   return '';
 }
 
+/* ──────────────────────────────────────────────
+   FIX 2 : normalizePaiementData — si non_assujetti, on vide ref/banque
+   ────────────────────────────────────────────── */
 function normalizePaiementData(b = {}) {
   const paiement_mode = normalizePaiementMode(b.paiement_mode);
+
+  /* Non assujetti → pas de ref ni banque */
+  if (paiement_mode === 'non_assujetti') {
+    return { paiement_mode: 'non_assujetti', paiement_ref: null, paiement_banque: null };
+  }
+
   const paiement_ref = b.paiement_ref !== undefined && b.paiement_ref !== null && String(b.paiement_ref).trim() !== ''
     ? String(b.paiement_ref).trim()
     : null;
@@ -110,6 +123,9 @@ function normalizeCarteRemise(v) {
   return 0;
 }
 
+/* ──────────────────────────────────────────────
+   FIX 3 : validate — skip paiement quand non_assujetti
+   ────────────────────────────────────────────── */
 function validate(b, { partial = false } = {}) {
   const errors = [];
   const req = (v) => v !== undefined && v !== null && String(v).trim() !== '';
@@ -124,16 +140,19 @@ function validate(b, { partial = false } = {}) {
     if (!req(bureau_badge_type)) errors.push('Le type affiché sur le badge du Bureau exécutif est obligatoire.');
   }
 
-  if (paiement.paiement_mode === 'cheque') {
-    if (!req(paiement.paiement_ref)) errors.push('Le numéro de chèque est obligatoire.');
-    else if (!/^\d{7}$/.test(String(paiement.paiement_ref))) errors.push('Le numéro de chèque doit contenir exactement 7 chiffres.');
-    if (!req(paiement.paiement_banque)) errors.push('La banque du chèque est obligatoire.');
-  }
-  if (paiement.paiement_mode === 'virement') {
-    if (!req(paiement.paiement_banque)) errors.push("L'information du virement est obligatoire.");
+  /* Validation paiement SEULEMENT si ce n'est PAS non_assujetti */
+  if (paiement.paiement_mode !== 'non_assujetti') {
+    if (paiement.paiement_mode === 'cheque') {
+      if (!req(paiement.paiement_ref)) errors.push('Le numéro de chèque est obligatoire.');
+      else if (!/^\d{7}$/.test(String(paiement.paiement_ref))) errors.push('Le numéro de chèque doit contenir exactement 7 chiffres.');
+      if (!req(paiement.paiement_banque)) errors.push('La banque du chèque est obligatoire.');
+    }
+    if (paiement.paiement_mode === 'virement') {
+      if (!req(paiement.paiement_banque)) errors.push("L'information du virement est obligatoire.");
+    }
   }
 
-  if (![0, 1, 2, 3].includes(etoiles)) errors.push('Le nombre d’étoiles doit être compris entre 0 et 3.');
+  if (![0, 1, 2, 3].includes(etoiles)) errors.push("Le nombre d'étoiles doit être compris entre 0 et 3.");
 
   return errors;
 }
@@ -269,9 +288,9 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const carte_remise = normalizeCarteRemise(b.carte_remise);
 
     const result = await run(
-      `INSERT INTO adherents (matricule, nom, prenom, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, nin, doc_type, doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
+      `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, nin, doc_type, doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
     );
 
@@ -284,7 +303,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
 
     if (!created) {
       created = { 
-        id: targetId, matricule, nom: text(b.nom), prenom: text(b.prenom), nom_ar: text(b.nom_ar), prenom_ar: text(b.prenom_ar),
+        id: targetId, matricule, nom: text(b.nom), prenom: text(b.prenom), nom_soc: opt(b.nom_soc), nom_ar: text(b.nom_ar), prenom_ar: text(b.prenom_ar),
         telephone: opt(b.telephone), email: opt(b.email), whatsapp: opt(b.whatsapp), viber: opt(b.viber), adresse_personnelle: opt(b.adresse_personnelle), nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), doc_numero_2: opt(b.doc_numero_2), photo,
         wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion,
         description, paiement_mode: paiement.paiement_mode, paiement_banque: paiement.paiement_banque, paiement_ref: paiement.paiement_ref,
@@ -337,9 +356,9 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
     }
 
     await run(
-      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
+      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_soc=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
        wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, etoiles=?, carte_remise=? WHERE id=?`,
-      [matricule, text(b.nom), text(b.prenom), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
+      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise, a.id]
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);
@@ -608,8 +627,9 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
 function renderDossierHTML(a, ad, info) {
   const nomPrenomFr = `${esc(a.prenom)} ${esc(a.nom)}`;
   const nomPrenomAr = `${esc(a.prenom_ar || a.prenom)} ${esc(a.nom_ar || a.nom)}`;
+  const nomSociete = esc(a.nom_soc || '');
   const telephone = esc(a.telephone || '');
-  const description = esc(a.description || ''); // Récupération et sécurisation de la description
+  const description = esc(a.description || '');
   const matricule = esc(a.matricule || ad?.matricule || '');
   const wilayaFr = esc(ad.wilaya_nom || '');
   const wilayaAr = esc(ad.wilaya_nom_ar || ad.wilaya_nom || '');
@@ -729,7 +749,7 @@ function renderDossierHTML(a, ad, info) {
   <div class="dossier">
     <div class="page p1">
       <input type="text" style="left:21%; top:16.5%; width:75%; height:2.2%" value="${nomPrenomFr}" />
-      <input type="text" style="left:29%; top:19.6%; width:67%; height:2.2%"  />
+      <input type="text" style="left:29%; top:19.6%; width:67%; height:2.2%" value="${nomSociete}" title="Nom de société" />
       <input type="text" style="left:13%; top:22.7%; width:83%; height:2.2%"  />
       <input type="text" style="left:15.5%; top:25.8%; width:31%; height:2.2%" value="${telephone}" />
       
@@ -739,6 +759,7 @@ function renderDossierHTML(a, ad, info) {
       <input type="text" style="left:40.5%; top:29.8%; width:14.5%; height:2.0%" value="${paiementRef}" />
       <input type="checkbox" class="chk" style="left:56.5%; top:30.2%" title="Virement" ${paiementMode === 'virement' ? 'checked' : ''} />
       <input type="checkbox" class="chk" style="left:82.5%; top:30.2%" title="Espèce" ${paiementMode === 'espece' ? 'checked' : ''} />
+      <input type="checkbox" class="chk" style="left:6.5%; top:33.5%" title="Non assujetti" ${paiementMode === 'non_assujetti' ? 'checked' : ''} />
 
       <input type="text" style="left:20%; top:37.6%; width:35%; height:2.2%" value="${paiementBanque}" />
       <input type="date" style="left:79.5%; top:37.6%; width:14%; height:2.2%" />

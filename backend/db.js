@@ -185,6 +185,7 @@ async function ensureMigrations() {
   try {
     if (!(await hasColumn('adherents', 'nom_ar'))) await query('ALTER TABLE adherents ADD COLUMN nom_ar VARCHAR(100) AFTER prenom');
     if (!(await hasColumn('adherents', 'prenom_ar'))) await query('ALTER TABLE adherents ADD COLUMN prenom_ar VARCHAR(100) AFTER nom_ar');
+    if (!(await hasColumn('adherents', 'nom_soc'))) await query('ALTER TABLE adherents ADD COLUMN nom_soc VARCHAR(255) DEFAULT NULL AFTER prenom_ar');
   } catch (e) { console.warn('Migration nom_ar/prenom_ar :', e.message); }
 
   try {
