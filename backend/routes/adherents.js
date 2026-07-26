@@ -162,7 +162,6 @@ async function checkUnique(b, excludeId = null) {
   const checks = [
     ['nin', opt(b.nin), 'Ce NIN'],
     ['telephone', opt(b.telephone), 'Ce téléphone'],
-    ['doc_numero', opt(b.doc_numero), 'Ce numéro de document']
   ];
   for (const [col, val, label] of checks) {
     if (!val) continue;
@@ -288,9 +287,9 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const carte_remise = normalizeCarteRemise(b.carte_remise);
 
     const result = await run(
-      `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, nin, doc_type, doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
+      `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, date_naissance, nin, doc_type,doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.date_naissance),opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
     );
 
@@ -304,7 +303,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     if (!created) {
       created = { 
         id: targetId, matricule, nom: text(b.nom), prenom: text(b.prenom), nom_soc: opt(b.nom_soc), nom_ar: text(b.nom_ar), prenom_ar: text(b.prenom_ar),
-        telephone: opt(b.telephone), email: opt(b.email), whatsapp: opt(b.whatsapp), viber: opt(b.viber), adresse_personnelle: opt(b.adresse_personnelle), nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), doc_numero_2: opt(b.doc_numero_2), photo,
+        telephone: opt(b.telephone), email: opt(b.email), whatsapp: opt(b.whatsapp), viber: opt(b.viber), adresse_personnelle: opt(b.adresse_personnelle), date_naissance: opt(b.date_naissance),nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), doc_numero_2: opt(b.doc_numero_2), photo,
         wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion,
         description, paiement_mode: paiement.paiement_mode, paiement_banque: paiement.paiement_banque, paiement_ref: paiement.paiement_ref,
         bureau_code, bureau_badge_type, etoiles, carte_remise
@@ -356,9 +355,9 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
     }
 
     await run(
-      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_soc=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
+      `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_soc=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, date_naissance=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
        wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, etoiles=?, carte_remise=? WHERE id=?`,
-      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
+      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle),opt(b.date_naissance), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise, a.id]
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);

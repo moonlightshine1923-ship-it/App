@@ -66,7 +66,7 @@ export async function initSchema() {
       telephone VARCHAR(30) UNIQUE,
       nin VARCHAR(18) UNIQUE,
       doc_type VARCHAR(2) DEFAULT 'RC',
-      doc_numero VARCHAR(20) UNIQUE,
+      doc_numero VARCHAR(20),
       photo VARCHAR(255),
       wilaya_code VARCHAR(5) NOT NULL DEFAULT '16',
       type_code VARCHAR(2) NOT NULL DEFAULT 'AD',
@@ -186,6 +186,7 @@ async function ensureMigrations() {
     if (!(await hasColumn('adherents', 'nom_ar'))) await query('ALTER TABLE adherents ADD COLUMN nom_ar VARCHAR(100) AFTER prenom');
     if (!(await hasColumn('adherents', 'prenom_ar'))) await query('ALTER TABLE adherents ADD COLUMN prenom_ar VARCHAR(100) AFTER nom_ar');
     if (!(await hasColumn('adherents', 'nom_soc'))) await query('ALTER TABLE adherents ADD COLUMN nom_soc VARCHAR(255) DEFAULT NULL AFTER prenom_ar');
+    if (!(await hasColumn('adherents', 'date_naissance'))) await query('ALTER TABLE adherents ADD COLUMN date_naissance DATE DEFAULT NULL AFTER adresse_personnelle');
   } catch (e) { console.warn('Migration nom_ar/prenom_ar :', e.message); }
 
   try {
@@ -207,7 +208,7 @@ async function ensureMigrations() {
     if (!(await hasColumn('users', 'permissions'))) await query('ALTER TABLE users ADD COLUMN permissions TEXT AFTER role');
   } catch (e) { console.warn('Migration permissions users :', e.message); }
 
-  for (const [name, col] of [['uq_adh_nin', 'nin'], ['uq_adh_tel', 'telephone'], ['uq_adh_doc', 'doc_numero']]) {
+  for (const [name, col] of [['uq_adh_nin', 'nin'], ['uq_adh_tel', 'telephone']]) {
     try { await query(`ALTER TABLE adherents ADD UNIQUE KEY ${name} (${col})`); } catch {}
   }
 

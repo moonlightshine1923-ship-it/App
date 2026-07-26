@@ -856,7 +856,12 @@ openModal(
 
       <div class="field full">
         <label>Adresse personnelle</label>
-        <input name="adresse_personnelle" value="${esc(adh?.adresse_personnelle || '')}" placeholder="Adresse complète..." />
+        <input name="adresse_personnelle" value="${esc(adh?.adresse_personnelle || '')}"  />
+      </div>
+
+      <div class="field">
+        <label>Date de naissance</label>
+        <input type="date" name="date_naissance" value="${esc(adh?.date_naissance ? String(adh.date_naissance).slice(0, 10) : '')}" />
       </div>
 
       <div class="field">
@@ -1217,6 +1222,7 @@ openModal(
         ${detailItem('WhatsApp', a.whatsapp || '—')}
         ${detailItem('Viber', a.viber || '—')}
         ${detailItem('Adresse personnelle', a.adresse_personnelle || '—')}
+        ${detailItem('Date de naissance', fmtDate(a.date_naissance))}
         ${detailItem('Wilaya', a.wilaya_nom || '—')}
         ${detailItem("Date d'adhésion", fmtDate(a.date_adhesion))}
         ${a.type_code === 'BE' ? '' : detailItem("Fin d'adhésion", expiry ? expiry.expirationText : '—')}
@@ -1385,72 +1391,150 @@ openModal(
     });
   }
   /* ----- Détail Demande ----- */
+    /* ----- Détail Demande ----- */
   async function demandeDetail(id) {
-    const d = await API.demande(id);
-    const piecesHtml = d.pieces && d.pieces.length
-      ? d.pieces.map((p) => `<button class="btn btn-dark btn-sm" data-file="${esc(p.filename)}">📎 ${esc(p.original_name || 'Pièce')}</button>`).join(' ')
-      : '<span class="muted">Aucune pièce jointe.</span>';
+    try {
+      const d = await API.demande(id);
 
-    openModal('Demande ' `
-      <div class="detail-grid" style="margin-bottom:18px">
-        ${detailItem('Nom', d.nom)}
-        ${detailItem('Prénom', d.prenom)}
-        ${detailItem('Wilaya', d.wilaya_nom || d.wilaya_code || '—')}
-        ${detailItem('Type de demande', d.type_demande || '—')}
-        ${detailItem('Email', d.email || '—')}
-        ${detailItem('Téléphone', d.telephone || '—')}
-        ${detailItem('Matricule', d.matricule || '—')}
-        ${detailItem('Priorité', d.priorite)}
-        ${detailItem('Statut', d.statut)}
-        ${detailItem('Date de création', (d.created_at || '').slice(0, 16))}
-      </div>
-      <div class="detail-item full"><div class="d-lbl">Objet</div><div class="d-val">${esc(d.objet)}</div></div>
-      <div class="detail-item" style="margin-top:12px"><div class="d-lbl">Description</div>
-        <div class="d-val" style="line-height:1.6">${esc(d.description || '—')}</div></div>
-      <div style="margin-top:14px"><div class="d-lbl" style="margin-bottom:8px">Pièces jointes</div>${piecesHtml}</div>
-      
-      <div class="panel" style="margin-top:18px">
-        <div class="panel-head"><h3>${canEditDemandes() ? 'Traitement' : 'Consultation'}</h3></div>
-        <div class="form-grid">
-          <div class="field"><label>Statut</label><select id="dStatut" ${canEditDemandes() ? '' : 'disabled'}>${REF.statutsDemande.map((s) => `<option ${s === d.statut ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
-          <div class="field"><label>Priorité</label><select id="dPriorite" ${canEditDemandes() ? '' : 'disabled'}>${REF.priorites.map((p) => `<option ${p === d.priorite ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+      const titre = `Demande ${d.numero || ('#' + d.id)}`;
+      const objet = d.objet || d.titre_demande || '—';
+      const telephone = d.num_tel || d.telephone || d.phone || '—';
+      const dateCreation = String(d.created_at || d.date_creation || '').replace('T', ' ').slice(0, 16);
+
+      const piecesHtml = d.pieces && d.pieces.length
+        ? d.pieces.map((p) => `
+            <button class="btn btn-dark btn-sm" data-file="${esc(p.filename)}">
+              📎 ${esc(p.original_name || 'Pièce jointe')}
+            </button>
+          `).join(' ')
+        : '<span class="muted">Aucune pièce jointe.</span>';
+
+      openModal(titre, `
+        <div class="detail-grid" style="margin-bottom:18px">
+          ${detailItem('Numéro', d.numero || '—')}
+          ${detailItem('Nom', d.nom || '—')}
+          ${detailItem('Prénom', d.prenom || '—')}
+          ${detailItem('Wilaya', d.wilaya_nom || d.wilaya || d.wilaya_code || '—')}
+          ${detailItem('Téléphone', telephone)}
+          ${detailItem('Matricule', d.matricule || '—')}
+          ${detailItem('Priorité', d.priorite || 'Normale')}
+          ${detailItem('Statut', d.statut || 'En attente')}
+          ${detailItem('Source', d.source || 'site')}
+          ${detailItem('Date de création', dateCreation || '—')}
         </div>
-        ${canEditDemandes() ? '<div style="text-align:right;margin-top:10px"><button class="btn btn-gold" id="demSave">Enregistrer le traitement</button></div>' : '<div class="muted" style="margin-top:10px">Ce compte peut consulter les demandes sans les modifier.</div>'}
-      </div>
-      <div class="modal-foot">
-        ${canEditDemandes() && d.statut !== 'Clôturée' ? '<button class="btn btn-dark" id="demCloturer">Clôturer</button>' : ''}
-        <button class="btn btn-gold" id="demClose">Fermer</button>
-      </div>`, true);
 
-    document.querySelectorAll('[data-file]').forEach((b) => b.onclick = async () => {
-      try { window.open(await API.fileUrl(b.dataset.file), '_blank'); } catch { toast('Fichier indisponible.', 'error'); }
-    });
-    
-    $('#demClose').onclick = closeModal;
-    
-    if ($('#demCloturer')) {
-      $('#demCloturer').onclick = async () => {
-        await API.cloturerDemande(d.id); 
-        toast('Demande clôturée.'); 
-        closeModal(); 
-        demandesList();
-      };
-    }
+        <div class="detail-item full" style="margin-top:12px">
+          <div class="d-lbl">Objet</div>
+          <div class="d-val">${esc(objet)}</div>
+        </div>
 
-    if ($('#demSave')) {
-      $('#demSave').onclick = async () => {
-        try {
-          await API.updateDemande(d.id, {
-            statut: $('#dStatut').value, 
-            priorite: $('#dPriorite').value
-          });
-          toast('Demande mise à jour avec succès.'); 
-          closeModal(); 
-          demandesList();
-        } catch (err) {
-          toast('Erreur lors de la mise à jour : ' + err.message, 'error');
-        }
-      };
+        <div class="detail-item full" style="margin-top:12px">
+          <div class="d-lbl">Description</div>
+          <div class="d-val" style="line-height:1.6;white-space:pre-wrap">${esc(d.description || '—')}</div>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="d-lbl" style="margin-bottom:8px">Pièces jointes</div>
+          ${piecesHtml}
+        </div>
+
+        <div class="panel" style="margin-top:18px">
+          <div class="panel-head">
+            <h3>${canEditDemandes() ? 'Traitement de la demande' : 'Consultation de la demande'}</h3>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label>Statut</label>
+              <select id="dStatut" ${canEditDemandes() ? '' : 'disabled'}>
+                ${REF.statutsDemande.map((s) => `
+                  <option value="${esc(s)}" ${s === d.statut ? 'selected' : ''}>${esc(s)}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Priorité</label>
+              <select id="dPriorite" ${canEditDemandes() ? '' : 'disabled'}>
+                ${REF.priorites.map((p) => `
+                  <option value="${esc(p)}" ${p === d.priorite ? 'selected' : ''}>${esc(p)}</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="field full">
+              <label>Affecté à</label>
+              <input id="dAffecteA" value="${esc(d.affecte_a || '')}" ${canEditDemandes() ? '' : 'disabled'} placeholder="Nom du responsable..." />
+            </div>
+
+            <div class="field full">
+              <label>Réponse / traitement</label>
+              <textarea id="dReponse" rows="4" ${canEditDemandes() ? '' : 'disabled'} placeholder="Écrire la réponse ou le suivi du traitement...">${esc(d.reponse || '')}</textarea>
+            </div>
+          </div>
+
+          ${canEditDemandes() ? `
+            <div style="text-align:right;margin-top:10px">
+              <button class="btn btn-gold" id="demSave">Enregistrer le traitement</button>
+            </div>
+          ` : `
+            <div class="muted" style="margin-top:10px">
+              Ce compte peut consulter les demandes sans les modifier.
+            </div>
+          `}
+        </div>
+
+        <div class="modal-foot">
+          ${canEditDemandes() && d.statut !== 'Clôturée' ? '<button class="btn btn-dark" id="demCloturer">Clôturer</button>' : ''}
+          <button class="btn btn-gold" id="demClose">Fermer</button>
+        </div>
+      `, true);
+
+      document.querySelectorAll('[data-file]').forEach((b) => {
+        b.onclick = async () => {
+          try {
+            window.open(await API.fileUrl(b.dataset.file), '_blank');
+          } catch {
+            toast('Fichier indisponible.', 'error');
+          }
+        };
+      });
+
+      $('#demClose').onclick = closeModal;
+
+      if ($('#demCloturer')) {
+        $('#demCloturer').onclick = async () => {
+          try {
+            await API.cloturerDemande(d.id);
+            toast('Demande clôturée.');
+            closeModal();
+            demandesList();
+          } catch (err) {
+            toast('Erreur lors de la clôture : ' + err.message, 'error');
+          }
+        };
+      }
+
+      if ($('#demSave')) {
+        $('#demSave').onclick = async () => {
+          try {
+            await API.updateDemande(d.id, {
+              statut: $('#dStatut').value,
+              priorite: $('#dPriorite').value,
+              affecte_a: $('#dAffecteA').value.trim(),
+              reponse: $('#dReponse').value.trim()
+            });
+
+            toast('Demande mise à jour avec succès.');
+            closeModal();
+            demandesList();
+          } catch (err) {
+            toast('Erreur lors de la mise à jour : ' + err.message, 'error');
+          }
+        };
+      }
+    } catch (err) {
+      toast('Impossible d’ouvrir la demande : ' + err.message, 'error');
     }
   }
 
