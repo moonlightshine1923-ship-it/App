@@ -628,6 +628,7 @@ function renderDossierHTML(a, ad, info) {
   const nomPrenomAr = `${esc(a.prenom_ar || a.prenom)} ${esc(a.nom_ar || a.nom)}`;
   const nomSociete = esc(a.nom_soc || '');
   const telephone = esc(a.telephone || '');
+  const email = esc(a.email || '');
   const description = esc(a.description || '');
   const matricule = esc(a.matricule || ad?.matricule || '');
   const wilayaFr = esc(ad.wilaya_nom || '');
@@ -765,10 +766,10 @@ function renderDossierHTML(a, ad, info) {
   <div class="dossier">
     <div class="page p1">
       <input type="text" style="left:21%; top:16.8%; width:75%; height:2.2%" value="${nomPrenomFr}" />
-      <input type="text" style="left:29%; top:20%; width:67%; height:2.2%" value="${nomSociete}" title="Nom de société" />
+      <input type="text" style="left:29%; top:20%; width:67%; height:2.2%" value="${dateNaissanceDMY}" title="Nom de société" />
       <input type="text" style="left:13%; top:22.9%; width:83%; height:2.2%" value="${adresse}" title="Adresse" />
       <input type="text" style="left:15.5%; top:26.2%; width:31%; height:2.2%" value="${telephone}" />
-      <input type="text" style="left:57%; top:26.2%; width:41%; height:2.2%" value="" title="" />
+      <input type="text" style="left:57%; top:26.2%; width:41%; height:2.2%" value="${email}" title="email" />
       
       
       <input type="text" style="left:40.5%; top:29.5%; width:14.5%; height:2.0%" value="${paiementRef}" />
@@ -821,7 +822,7 @@ function renderDossierHTML(a, ad, info) {
       <input type="text" style="left:59%; top:24.5%; width:17%; height:2.2%" value="${todayDMY}" title="Fait le" />
       <input type="text" style="left:30%; top:32%; width:55%; height:2.2%" value="${nomPrenomFr}" title="Je soussigné Mr" />
       <input type="text" style="left:24%; top:37.3%; width:23%; height:2.2%" value="${nin}" title="N° pièce d'identité" />
-      <input type="text" style="left:64.5%; top:37.3%; width:27%; height:2.2%" value="${niveauFr}" title="En ma qualité de" />
+      <input type="text" style="left:64.5%; top:37.3%; width:27%; height:2.2%" value="" title="En ma qualité de" />
       <input type="text" style="left:19.6%; top:43.3%; width:35%; height:2.2%" value="${nomSociete}" title="De la société" />
       <input type="text" style="left:78%; top:55.5%; width:14%; height:2.2%" value="${todayDMY}" title="A Ouled Fayet le" />
     </div>
