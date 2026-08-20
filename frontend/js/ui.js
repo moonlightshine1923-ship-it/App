@@ -55,13 +55,13 @@ const UI = (() => {
   }
   function typeTag(libelle) {
  const colors = {
- 'Adhérent Simple': '#c49b2e',
- 'Adhérent Gold': '#c49b2e',
+ 'Adhérent simple': '#e7d970',
+ 'Adhérent gold': '#c49b2e',
  'Membre Actif': '#d4873a',
  'Conseiller': '#1a1a1a',
  };
  const bg = colors[libelle] || '#c49b2e';
- const textColor = bg === '#1a1a1a' ? '#ffffff' : '#ffffff';
+ const textColor = '#ffffff';
  return `<span class="tag" style="background:${bg};color:${textColor}">${esc(libelle)}</span>`;
 }
 

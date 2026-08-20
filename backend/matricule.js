@@ -27,27 +27,29 @@ function cleanBureauCode(code) {
   return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
 }
 
-/* ── CR : compteur NATIONAL (que les CR) ── */
-async function nextNumOrdreCR() {
+/* ── CR : compteur NATIONAL (que les CR) — remis à zéro chaque année ── */
+async function nextNumOrdreCR(annee) {
   const row = await get(
-    "SELECT COUNT(*) AS cnt FROM adherents WHERE type_code = 'CR'"
+    "SELECT COUNT(*) AS cnt FROM adherents WHERE type_code = 'CR' AND annee = ?",
+    [annee]
   );
   return (row && row.cnt ? row.cnt : 0) + 1;
 }
 
-/* ── MA : compteur NATIONAL (que les MA) ── */
-async function nextNumOrdreMA() {
+/* ── MA : compteur NATIONAL (que les MA) — remis à zéro chaque année ── */
+async function nextNumOrdreMA(annee) {
   const row = await get(
-    "SELECT COUNT(*) AS cnt FROM adherents WHERE type_code = 'MA'"
+    "SELECT COUNT(*) AS cnt FROM adherents WHERE type_code = 'MA' AND annee = ?",
+    [annee]
   );
   return (row && row.cnt ? row.cnt : 0) + 1;
 }
 
-/* ── AD : compteur par WILAYA (Gold + Simple ensemble) ── */
-async function nextNumOrdreAD(wilaya_code) {
+/* ── AD : compteur par WILAYA (Gold + Simple ensemble) — remis à zéro chaque année ── */
+async function nextNumOrdreAD(wilaya_code, annee) {
   const row = await get(
-    "SELECT COUNT(*) AS cnt FROM adherents WHERE wilaya_code = ? AND (type_code = 'AD' OR type_code IS NULL)",
-    [wilaya_code]
+    "SELECT COUNT(*) AS cnt FROM adherents WHERE wilaya_code = ? AND (type_code = 'AD' OR type_code IS NULL) AND annee = ?",
+    [wilaya_code, annee]
   );
   return (row && row.cnt ? row.cnt : 0) + 1;
 }
@@ -67,33 +69,35 @@ export function buildMatricule({ wilaya_code, num_ordre, type_code, annee, burea
 
 export async function generateMatricule({ wilaya_code, type_code, annee, bureau_code }) {
   const normalizedType = String(type_code || 'AD').toUpperCase();
+  const currentAnnee = annee || new Date().getFullYear();
 
   // BE : pas de num_ordre
   if (normalizedType === 'BE') {
-    const matricule = buildMatricule({ wilaya_code, type_code: 'BE', annee, bureau_code });
+    const matricule = buildMatricule({ wilaya_code, type_code: 'BE', annee: currentAnnee, bureau_code });
     return { matricule, num_ordre: 0 };
   }
 
-  // MA : compteur NATIONAL
+  // MA : compteur NATIONAL par année
   if (normalizedType === 'MA') {
-    const num_ordre = await nextNumOrdreMA();
-    return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'MA', annee }), num_ordre };
+    const num_ordre = await nextNumOrdreMA(currentAnnee);
+    return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'MA', annee: currentAnnee }), num_ordre };
   }
 
-  // CR : compteur NATIONAL
+  // CR : compteur NATIONAL par année
   if (normalizedType === 'CR') {
-    const num_ordre = await nextNumOrdreCR();
-    return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'CR', annee }), num_ordre };
+    const num_ordre = await nextNumOrdreCR(currentAnnee);
+    return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'CR', annee: currentAnnee }), num_ordre };
   }
 
-  // AD (Gold + Simple) : compteur par wilaya
-  const num_ordre = await nextNumOrdreAD(wilaya_code);
-  return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'AD', annee }), num_ordre };
+  // AD (Gold + Simple) : compteur par wilaya par année
+  const num_ordre = await nextNumOrdreAD(wilaya_code, currentAnnee);
+  return { matricule: buildMatricule({ wilaya_code, num_ordre, type_code: 'AD', annee: currentAnnee }), num_ordre };
 }
 
-export async function nextNumOrdre(wilaya_code, type_code) {
+export async function nextNumOrdre(wilaya_code, type_code, annee) {
   const t = String(type_code || 'AD').toUpperCase();
-  if (t === 'MA') return nextNumOrdreMA();
-  if (t === 'CR') return nextNumOrdreCR();
-  return nextNumOrdreAD(wilaya_code);
+  const currentAnnee = annee || new Date().getFullYear();
+  if (t === 'MA') return nextNumOrdreMA(currentAnnee);
+  if (t === 'CR') return nextNumOrdreCR(currentAnnee);
+  return nextNumOrdreAD(wilaya_code, currentAnnee);
 }

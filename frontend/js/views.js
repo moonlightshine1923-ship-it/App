@@ -664,13 +664,14 @@ return `<div class="stat-card" style="--kpi-color:${color}">
         <th>${isBureau ? 'Type badge' : 'Wilaya'}</th>
         <th>${isBureau ? 'Wilaya' : 'Type'}</th>
         <th>${isBureau ? 'Adhésion' : 'Étoiles'}</th>
-        <th>${isBureau ? '' : 'Fin adhésion'}</th>
-        <th>${isBureau ? '' : 'Payé'}</th>
+        <th>${isBureau ? 'Étoiles' : 'Fin adhésion'}</th>
+        <th>${isBureau ? 'Fin adhésion' : 'Payé'}</th>
+        ${isBureau ? '<th>Payé</th>' : ''}
         <th></th>
       </tr></thead><tbody>
       ${list.map((a) => {
-        const expiry = !isBureau ? getExpirationInfo(a) : null;
-        const expiryHtml = !isBureau
+        const expiry = getExpirationInfo(a);
+        const expiryHtml = expiry
           ? (expiry
               ? `<div style="font-weight:600;color:${expiry.isExpired ? '#dc2626' : expiry.isSoon ? '#d97706' : 'var(--text)'}">${esc(expiry.expirationText)}</div><div class="muted" style="font-size:11px">${expiry.isExpired ? 'Expirée' : expiry.isSoon ? `Expire dans ${expiry.daysLeft} jour${expiry.daysLeft > 1 ? 's' : ''}` : 'Valide'}</div>`
               : '<span class="muted">—</span>')
@@ -683,8 +684,9 @@ return `<div class="stat-card" style="--kpi-color:${color}">
         <td>${isBureau ? esc(a.bureau_badge_type || '—') : esc(a.wilaya_nom || '—')}</td>
         <td>${isBureau ? esc(a.wilaya_nom || '—') : UI.typeTag(a.type_libelle || '—')}</td>
         <td>${isBureau ? `<span class="muted">${esc(fmtDate(a.date_adhesion))}</span>` : renderStars(a.etoiles)}</td>
-        <td>${isBureau ? '' : expiryHtml}</td>
-        <td>${isBureau ? '' : (a.paiement_mode === 'non_assujetti' ? '<span class="tag" style="background:#f0ead8;color:#8a6e18">⊘ Non assujetti</span>' : a.paiement_mode ? '<span class="tag tag-actif">✓ Oui</span>' : '<span class="tag tag-inactif">✕ Non</span>')}</td>
+        <td>${isBureau ? renderStars(a.etoiles) : expiryHtml}</td>
+        <td>${isBureau ? expiryHtml : (a.paiement_mode === 'non_assujetti' ? '<span class="tag" style="background:#f0ead8;color:#8a6e18">⊘ Non assujetti</span>' : a.paiement_mode ? '<span class="tag tag-actif">✓ Oui</span>' : '<span class="tag tag-inactif">✕ Non</span>')}</td>
+        ${isBureau ? `<td>${a.paiement_mode === 'non_assujetti' ? '<span class="tag" style="background:#f0ead8;color:#8a6e18">⊘ Non assujetti</span>' : a.paiement_mode ? '<span class="tag tag-actif">✓ Oui</span>' : '<span class="tag tag-inactif">✕ Non</span>'}</td>` : ''}
         <td><div class="row-actions">
           <button class="btn btn-dark btn-sm" data-view="${a.id}">Voir</button>
           ${isBureau ? '' : `<button class="btn btn-gold btn-sm" data-renew="${a.id}">Renouveler</button>`}

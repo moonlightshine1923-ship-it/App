@@ -289,7 +289,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const result = await run(
       `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, date_naissance, nin, doc_type,doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.date_naissance),opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
+      [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc,''), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.date_naissance),opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
         photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
     );
 
@@ -635,10 +635,25 @@ function renderDossierHTML(a, ad, info) {
   const dateAdhFr = formatDateAdhesion(a.date_adhesion);
   const typeMembreFr = esc(ad.type_libelle || '');
   const idNum = esc(a.doc_numero || a.nin || '');
+  const nin = esc(a.nin || '');
   const rcNum = esc(a.doc_type === 'RC' ? a.doc_numero : '');
   const paiementMode = normalizePaiementMode(a.paiement_mode);
   const paiementRef = esc(a.paiement_ref || '');
   const paiementBanque = esc(a.paiement_banque || '');
+  const adresse = esc(a.adresse_personnelle || '');
+  const dateNaissance = a.date_naissance ? formatDateAdhesion(a.date_naissance) : '';
+  const niveauFr = esc(a.niveau || ad?.type_libelle || '');
+
+  // Format DD/MM/YYYY pour les pages arabes et la date du jour
+  function formatDateDMY(d) {
+    if (!d) return '';
+    const s = (d instanceof Date) ? d.toISOString() : String(d);
+    if (s.length < 10) return '';
+    const parts = s.slice(0, 10).split('-');
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  const dateNaissanceDMY = a.date_naissance ? formatDateDMY(a.date_naissance) : '';
+  const todayDMY = formatDateDMY(new Date());
   
   let expFr = '----/--/--';
   if (a.date_adhesion) {
@@ -686,6 +701,8 @@ function renderDossierHTML(a, ad, info) {
   .p1 { background-image: url('/assets/dossier/page1.png'); }
   .p2 { background-image: url('/assets/dossier/page2.png'); }
   .p3 { background-image: url('/assets/dossier/page3.png'); }
+  .p4 { background-image: url('/assets/dossier/page4.png'); }
+  .p5 { background-image: url('/assets/dossier/page5.png'); }
 
   input[type="text"], input[type="date"], input[type="email"] {
     position: absolute;
@@ -747,41 +764,21 @@ function renderDossierHTML(a, ad, info) {
 
   <div class="dossier">
     <div class="page p1">
-      <input type="text" style="left:21%; top:16.5%; width:75%; height:2.2%" value="${nomPrenomFr}" />
-      <input type="text" style="left:29%; top:19.6%; width:67%; height:2.2%" value="${nomSociete}" title="Nom de société" />
-      <input type="text" style="left:13%; top:22.7%; width:83%; height:2.2%"  />
-      <input type="text" style="left:15.5%; top:25.8%; width:31%; height:2.2%" value="${telephone}" />
+      <input type="text" style="left:21%; top:16.8%; width:75%; height:2.2%" value="${nomPrenomFr}" />
+      <input type="text" style="left:29%; top:20%; width:67%; height:2.2%" value="${nomSociete}" title="Nom de société" />
+      <input type="text" style="left:13%; top:22.9%; width:83%; height:2.2%" value="${adresse}" title="Adresse" />
+      <input type="text" style="left:15.5%; top:26.2%; width:31%; height:2.2%" value="${telephone}" />
+      <input type="text" style="left:57%; top:26.2%; width:41%; height:2.2%" value="" title="" />
       
-      <input type="text" style="left:57%; top:25.8%; width:41%; height:2.2%" value="${description}" title="Description" />
       
-      <input type="checkbox" class="chk" style="left:25.3%; top:30.2%" title="Chèque" ${paiementMode === 'cheque' ? 'checked' : ''} />
-      <input type="text" style="left:40.5%; top:29.8%; width:14.5%; height:2.0%" value="${paiementRef}" />
-      <input type="checkbox" class="chk" style="left:56.5%; top:30.2%" title="Virement" ${paiementMode === 'virement' ? 'checked' : ''} />
-      <input type="checkbox" class="chk" style="left:82.5%; top:30.2%" title="Espèce" ${paiementMode === 'espece' ? 'checked' : ''} />
+      <input type="text" style="left:40.5%; top:29.5%; width:14.5%; height:2.0%" value="${paiementRef}" />
       <input type="checkbox" class="chk" style="left:6.5%; top:33.5%" title="Non assujetti" ${paiementMode === 'non_assujetti' ? 'checked' : ''} />
 
-      <input type="text" style="left:20%; top:37.6%; width:35%; height:2.2%" value="${paiementBanque}" />
-      <input type="date" style="left:79.5%; top:37.6%; width:14%; height:2.2%" />
-      <input type="text" style="left:14.7%; top:40.7%; width:27%; height:2.2%" value="${esc(a.niveau || '')}" />
-      <input type="text" style="left:71%; top:40.7%; width:26%; height:2.2%" value="${rcNum}"  />
+      <input type="text" style="left:20%; top:37.2%; width:35%; height:2.2%" value="${paiementBanque}" />
+      <input type="text" style="left:79.5%; top:37.2%; width:17%; height:2.2%" value="" />
+      <input type="text" style="left:13.7%; top:40.9%; width:27%; height:2.2%" value="" />
+      <input type="text" style="left:71%; top:40.7%; width:26%; height:2.2%" value="" />
 
-      <input type="checkbox" class="chk" style="left:5.2%; top:47.8%" title="SPA" />
-      <input type="checkbox" class="chk" style="left:5.2%; top:50.1%" title="SARL" />
-      <input type="checkbox" class="chk" style="left:5.2%; top:52.4%" title="EURL" />
-      <input type="checkbox" class="chk" style="left:5.2%; top:54.7%" title="GPT" />
-      <input type="checkbox" class="chk" style="left:21.3%; top:47.8%" title="Personne Physique" checked />
-
-      <input type="checkbox" class="chk" style="left:38.5%; top:47.8%" title="Commerce" />
-      <input type="checkbox" class="chk" style="left:38.5%; top:50.1%" title="Industrie" />
-      <input type="checkbox" class="chk" style="left:38.5%; top:52.4%" title="Agriculture" />
-      <input type="checkbox" class="chk" style="left:38.5%; top:54.7%" title="Energie" />
-      <input type="checkbox" class="chk" style="left:58.4%; top:47.8%" title="Informatique" />
-      <input type="checkbox" class="chk" style="left:58.4%; top:50.1%" title="Services" />
-      <input type="checkbox" class="chk" style="left:58.4%; top:52.4%" title="Construction" />
-
-      <input type="checkbox" class="chk" style="left:83.9%; top:47.8%" title="Public" />
-      <input type="checkbox" class="chk" style="left:83.9%; top:50.1%" title="Privé" checked />
-      <input type="checkbox" class="chk" style="left:83.9%; top:52.4%" title="Mixte" />
 
       <input type="text" style="left:24.5%; top:76.8%; width:31%; height:2.2%" value="${matricule}" />
       <input type="text" style="left:22.5%; top:79.8%; width:33%; height:2.2%" value="${dateAdhFr}" />
@@ -793,36 +790,47 @@ function renderDossierHTML(a, ad, info) {
 
     <div class="page p2 rtl">
       <input type="text" style="left:9%; top:36.8%; width:59%; height:2.2%" value="${nomPrenomAr}" />
-      <input type="text" style="left:55%; top:40.5%; width:24%; height:2.2%"  />
-      <input type="text" class="ltr-f" style="left:9%; top:40.5%; width:24%; height:2.2%" value="${idNum}" />
+      <input type="text" style="left:55%; top:40.5%; width:24%; height:2.2%" value="${dateNaissanceDMY}" title="تاريخ الميلاد" />
+      <input type="text" class="ltr-f" style="left:9%; top:40.5%; width:24%; height:2.2%" value="${nin}" />
       <input type="text" style="left:68%; top:43.9%; width:16%; height:2.2%" />
       <input type="text" style="left:33%; top:43.9%; width:17%; height:2.2%" />
-      <input type="text" style="left:9%; top:43.9%; width:17%; height:2.2%" value="${wilayaAr}" />
+      <input type="text" style="left:9%; top:43.9%; width:17%; height:2.2%" />
       <input type="text" style="left:9%; top:46.8%; width:36%; height:2.2%" />
       <input type="text" style="left:9%; top:50.5%; width:61%; height:2.2%" />
 
-      <input type="text" class="ltr-f" style="left:10%; top:61.2%; width:18%; height:2.2%" value="${todayFr}" />
+      <input type="text" class="ltr-f" style="left:10%; top:61.2%; width:18%; height:2.2%" value="${todayDMY}" />
 
-      <input type="checkbox" class="chk" style="left:91.5%; top:81.2%" />
-      <input type="checkbox" class="chk" style="left:91.5%; top:83.1%" />
-      <input type="checkbox" class="chk" style="left:91.5%; top:85.0%" />
-      <input type="checkbox" class="chk" style="left:91.5%; top:87.0%" />
-      <input type="checkbox" class="chk" style="left:91.5%; top:88.9%" />
-      <input type="checkbox" class="chk" style="left:91.5%; top:91.0%" />
+      
     </div>
 
     <div class="page p3 rtl">
       <input type="text" style="left:10%; top:25.3%; width:59%; height:2.2%" value="${nomPrenomAr}" />
-      <input type="text" style="left:56%; top:28.8%; width:24%; height:2.2%"  />
-      <input type="text" class="ltr-f" style="left:10%; top:28.8%; width:24%; height:2.2%" value="${idNum}" />
+      <input type="text" style="left:56%; top:28.8%; width:24%; height:2.2%" value="${dateNaissanceDMY}" title="تاريخ الميلاد" />
+      <input type="text" class="ltr-f" style="left:10%; top:28.8%; width:24%; height:2.2%" value="${nin}" />
       <input type="text" style="left:68%; top:32.3%; width:17%; height:2.2%"  />
       <input type="text" style="left:33%; top:32.3%; width:18%; height:2.2%"  />
-      <input type="text" style="left:10%; top:32.3%; width:17%; height:2.2%" value="${wilayaAr}" />
-      <input type="text" style="left:10%; top:35.8%; width:36%; height:2.2%"  />
+      <input type="text" style="left:10%; top:32.3%; width:17%; height:2.2%" />
+      <input type="text" style="left:10%; top:35.5%; width:36%; height:2.2%"  />
       <input type="text" style="left:10%; top:38.5%; width:61%; height:2.2%"  />
  
 
-      <input type="text" class="ltr-f" style="left:66%; top:74.5%; width:18%; height:2.2%" value="${todayFr}" />
+      <input type="text" class="ltr-f" style="left:66%; top:74.5%; width:18%; height:2.2%" value="${todayDMY}" />
+    </div>
+
+    <div class="page p4">
+      <input type="text" style="left:59%; top:24.5%; width:17%; height:2.2%" value="${todayDMY}" title="Fait le" />
+      <input type="text" style="left:30%; top:32%; width:55%; height:2.2%" value="${nomPrenomFr}" title="Je soussigné Mr" />
+      <input type="text" style="left:24%; top:37.3%; width:23%; height:2.2%" value="${nin}" title="N° pièce d'identité" />
+      <input type="text" style="left:64.5%; top:37.3%; width:27%; height:2.2%" value="${niveauFr}" title="En ma qualité de" />
+      <input type="text" style="left:19.6%; top:43.3%; width:35%; height:2.2%" value="${nomSociete}" title="De la société" />
+      <input type="text" style="left:78%; top:55.5%; width:14%; height:2.2%" value="${todayDMY}" title="A Ouled Fayet le" />
+    </div>
+
+    <div class="page p5">
+      <input type="text" style="left:59%; top:21.2%; width:17%; height:2.2%" value="${todayDMY}" title="Fait le" />
+      <input type="text" style="left:30%; top:32.4%; width:40%; height:2.2%" value="" title="Somme reçue" />
+      <input type="text" style="left:10%; top:36.9%; width:55%; height:2.2%" value="" title="Soit" />
+      <input type="text" style="left:78%; top:69%; width:14%; height:2.2%" value="${todayDMY}" title="A Ouled Fayet le" />
     </div>
   </div>
 </body>
