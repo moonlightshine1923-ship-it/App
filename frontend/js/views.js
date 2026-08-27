@@ -744,6 +744,8 @@ return `<div class="stat-card" style="--kpi-color:${color}">
     const currEtoiles = Number.parseInt(adh?.etoiles, 10) || 0;
     const currBureauCode = adh?.bureau_code || '';
     const currBadgeType = adh?.bureau_badge_type || '';
+    const currQualiteAr = adh?.qualite_ar || '';
+    const currMatricule = adh?.matricule || '';
     const currCarteRemise = Number.parseInt(adh?.carte_remise, 10) === 1;
     const allowBE = canAccessBE();
 openModal(
@@ -890,10 +892,21 @@ openModal(
       </div>
 
       <div class="field">
-        <label>Wilaya</label>
+        <label>Wilaya / pays</label>
         <select name="wilaya_code" id="fWilaya">
           ${wilayaOptions(adh?.wilaya_code || '16')}
         </select>
+      </div>
+
+      <div class="field" id="fManualMatriculeWrap">
+        <label>Matricule manuel *</label>
+        <input name="matricule" id="fManualMatricule" value="${esc(currMatricule)}" maxlength="40" placeholder="Saisir le matricule" />
+      </div>
+
+      <div class="field" id="fQualiteArWrap">
+        <label>الصفة *</label>
+        <input name="qualite_ar" id="fQualiteAr" value="${esc(currQualiteAr)}" dir="rtl" maxlength="100" />
+        
       </div>
 
       <div class="field">
@@ -1133,9 +1146,28 @@ openModal(
  }
 }
 
+    function updateWilayaFields() {
+      const foreign = $('#fWilaya').value === 'ETR';
+      const matriculeWrap = $('#fManualMatriculeWrap');
+      const matriculeInput = $('#fManualMatricule');
+      const qualiteWrap = $('#fQualiteArWrap');
+      const qualiteInput = $('#fQualiteAr');
+
+      matriculeWrap.style.display = foreign ? '' : 'none';
+      qualiteWrap.style.display = foreign ? '' : 'none';
+      matriculeInput.required = foreign;
+      qualiteInput.required = foreign;
+    }
+
     async function refreshMatricule() {
       const w = $('#fWilaya').value;
       const t = $('#fTypeCode').value;
+      updateWilayaFields();
+
+      if (w === 'ETR') {
+        $('#matPreview').textContent = $('#fManualMatricule').value.trim() || 'Saisissez le matricule manuel ci-dessus';
+        return;
+      }
       const bureauCode = ($('#fBureauCode').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
       const an = $('#fDate').value ? new Date($('#fDate').value).getFullYear() : new Date().getFullYear();
       $('#fAnnee').value = an;
@@ -1151,6 +1183,11 @@ openModal(
 
     $('#fDocType').onchange = updateDocHint;
     $('#fWilaya').onchange = refreshMatricule;
+    $('#fManualMatricule').oninput = () => {
+      if ($('#fWilaya').value === 'ETR') {
+        $('#matPreview').textContent = $('#fManualMatricule').value.trim() || 'Saisissez le matricule manuel ci-dessus';
+      }
+    };
     $('#fTypeSelect').onchange = () => {
       const opt = $('#fTypeSelect').options[$('#fTypeSelect').selectedIndex];
       $('#fTypeCode').value = opt.dataset.code;
@@ -1225,7 +1262,8 @@ openModal(
         ${detailItem('Viber', a.viber || '—')}
         ${detailItem('Adresse personnelle', a.adresse_personnelle || '—')}
         ${detailItem('Date de naissance', fmtDate(a.date_naissance))}
-        ${detailItem('Wilaya', a.wilaya_nom || '—')}
+        ${detailItem('Wilaya / pays', a.wilaya_nom || '—')}
+        ${a.qualite_ar ? detailItem('الصفة', a.qualite_ar) : ''}
         ${detailItem("Date d'adhésion", fmtDate(a.date_adhesion))}
         ${a.type_code === 'BE' ? '' : detailItem("Fin d'adhésion", expiry ? expiry.expirationText : '—')}
         ${detailItem('Année', a.annee || '—')}

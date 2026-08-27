@@ -82,6 +82,7 @@ export async function initSchema() {
       paiement_ref VARCHAR(100),
       bureau_code VARCHAR(3),
       bureau_badge_type VARCHAR(100),
+      qualite_ar VARCHAR(100),
       etoiles TINYINT DEFAULT 0,
       carte_remise TINYINT(1) DEFAULT 0,
       top_month_rank INT DEFAULT NULL,
@@ -198,7 +199,8 @@ async function ensureMigrations() {
     if (!(await hasColumn('adherents', 'paiement_ref'))) await query('ALTER TABLE adherents ADD COLUMN paiement_ref VARCHAR(100) AFTER paiement_banque');
     if (!(await hasColumn('adherents', 'bureau_code'))) await query('ALTER TABLE adherents ADD COLUMN bureau_code VARCHAR(3) AFTER paiement_ref');
     if (!(await hasColumn('adherents', 'bureau_badge_type'))) await query('ALTER TABLE adherents ADD COLUMN bureau_badge_type VARCHAR(100) AFTER bureau_code');
-    if (!(await hasColumn('adherents', 'etoiles'))) await query('ALTER TABLE adherents ADD COLUMN etoiles TINYINT DEFAULT 0 AFTER bureau_badge_type');
+    if (!(await hasColumn('adherents', 'qualite_ar'))) await query('ALTER TABLE adherents ADD COLUMN qualite_ar VARCHAR(100) DEFAULT NULL AFTER bureau_badge_type');
+    if (!(await hasColumn('adherents', 'etoiles'))) await query('ALTER TABLE adherents ADD COLUMN etoiles TINYINT DEFAULT 0 AFTER qualite_ar');
     if (!(await hasColumn('adherents', 'carte_remise'))) await query('ALTER TABLE adherents ADD COLUMN carte_remise TINYINT(1) DEFAULT 0 AFTER etoiles');
     if (!(await hasColumn('adherents', 'top_month_rank'))) await query('ALTER TABLE adherents ADD COLUMN top_month_rank INT DEFAULT NULL AFTER carte_remise');
     if (!(await hasColumn('adherents', 'top_year_rank'))) await query('ALTER TABLE adherents ADD COLUMN top_year_rank INT DEFAULT NULL AFTER top_month_rank');

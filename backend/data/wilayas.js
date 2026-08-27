@@ -72,6 +72,9 @@ export const WILAYAS = [
   { code: '67', nom: 'Ksar Chellala', nomAr: 'قصر الشلالة' },
   { code: '68', nom: 'Aïn Oussara', nomAr: 'عين وسارة' },
   { code: '69', nom: 'Messaâd', nomAr: 'مسعد' },
+
+  // Adhérents établis hors d'Algérie (matricule saisi manuellement)
+  { code: 'ETR', nom: 'Pays étranger', nomAr: 'بلد أجنبي', etranger: true },
 ];
 
 // Types d'adhérents
@@ -150,6 +153,11 @@ export function carteInfo(adherent) {
   } else {
     modele = 'simple'; basAr = 'بطاقة منخرط'; qualiteAr = 'منخرط';
   }
+  // Une qualité saisie manuellement remplace le libellé automatique sur la carte.
+  if (adherent.qualite_ar && String(adherent.qualite_ar).trim()) {
+    qualiteAr = String(adherent.qualite_ar).trim();
+  }
+
   return { modele, basAr, qualiteAr };
 }
 

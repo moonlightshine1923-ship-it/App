@@ -123,6 +123,14 @@ function normalizeCarteRemise(v) {
   return 0;
 }
 
+function isEtranger(wilayaCode) {
+  return String(wilayaCode || '').toUpperCase() === 'ETR';
+}
+
+function normalizeMatriculeManuel(v) {
+  return String(v || '').trim().slice(0, 40);
+}
+
 /* ──────────────────────────────────────────────
    FIX 3 : validate — skip paiement quand non_assujetti
    ────────────────────────────────────────────── */
@@ -138,6 +146,12 @@ function validate(b, { partial = false } = {}) {
   if (type_code === 'BE') {
     if (!bureau_code || bureau_code.length !== 3) errors.push('Le code Bureau exécutif doit contenir exactement 3 caractères.');
     if (!req(bureau_badge_type)) errors.push('Le type affiché sur le badge du Bureau exécutif est obligatoire.');
+  }
+
+  if (isEtranger(b.wilaya_code)) {
+    if (!req(b.matricule)) errors.push('Le matricule manuel est obligatoire pour un pays étranger.');
+    else if (String(b.matricule).trim().length > 40) errors.push('Le matricule ne doit pas dépasser 40 caractères.');
+    if (!req(b.qualite_ar)) errors.push('Le champ الصفة est obligatoire pour un pays étranger.');
   }
 
   /* Validation paiement SEULEMENT si ce n'est PAS non_assujetti */
@@ -176,7 +190,8 @@ async function checkUnique(b, excludeId = null) {
 
 async function assureMatricules() {
   try {
-    const rows = await query('SELECT * FROM adherents WHERE matricule IS NULL OR matricule = ""');
+    // Ne jamais fabriquer automatiquement un matricule pour les adhérents à l'étranger.
+    const rows = await query("SELECT * FROM adherents WHERE (matricule IS NULL OR matricule = '') AND wilaya_code <> 'ETR'");
     for (const a of rows) {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
       const w = a.wilaya_code || '16';
@@ -190,6 +205,9 @@ async function assureMatricules() {
 router.get('/preview/matricule', authenticate, authorize('admin', 'president', 'perm:adherents_add'), async (req, res) => {
   try {
     const { wilaya_code, type_code, annee, bureau_code } = req.query;
+    if (isEtranger(wilaya_code)) {
+      return res.json({ matricule: '', num_ordre: 0, manuel: true });
+    }
     if (req.user.role === 'saisie' && String(type_code || '').toUpperCase() === 'BE') {
       return res.status(403).json({ error: "Ce compte n'est pas autorisé à créer un membre du Bureau exécutif." });
     }
@@ -267,15 +285,18 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const annee = date_adhesion ? new Date(date_adhesion).getFullYear() : new Date().getFullYear();
     const bureau_code = type_code === 'BE' ? normalizeBureauCode(b.bureau_code) : null;
     const bureau_badge_type = type_code === 'BE' ? opt(b.bureau_badge_type) : null;
-    const generated = await generateMatricule({
-      wilaya_code,
-      type_code,
-      annee,
-      bureau_code,
-    });
 
-    const matricule = generated.matricule;
-    const num_ordre = generated.num_ordre;
+    // En Algérie : génération automatique. À l'étranger : saisie manuelle.
+    let matricule;
+    let num_ordre;
+    if (isEtranger(wilaya_code)) {
+      matricule = normalizeMatriculeManuel(b.matricule);
+      num_ordre = 0;
+    } else {
+      const generated = await generateMatricule({ wilaya_code, type_code, annee, bureau_code });
+      matricule = generated.matricule;
+      num_ordre = generated.num_ordre;
+    }
     if (await get('SELECT id FROM adherents WHERE matricule = ?', [matricule])) {
       return res.status(409).json({ error: 'Ce matricule existe déjà. Vérifiez le code Bureau exécutif.' });
     }
@@ -285,12 +306,13 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
     const niveau = normalizeNiveau(type_code, b.niveau, bureau_badge_type);
     const etoiles = type_code === 'BE' ? 0 : normalizeEtoiles(b.etoiles);
     const carte_remise = normalizeCarteRemise(b.carte_remise);
+    const qualite_ar = isEtranger(wilaya_code) ? opt(b.qualite_ar) : null;
 
     const result = await run(
-      `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, date_naissance, nin, doc_type,doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO adherents (matricule, nom, prenom, nom_soc, nom_ar, prenom_ar, telephone, email, whatsapp, viber, adresse_personnelle, date_naissance, nin, doc_type,doc_numero, doc_numero_2, photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement_mode, paiement_banque, paiement_ref, bureau_code, bureau_badge_type, qualite_ar, etoiles, carte_remise)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc,''), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle), opt(b.date_naissance),opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
-        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise]
+        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, qualite_ar, etoiles, carte_remise]
     );
 
     const targetId = result?.insertId || result?.id || result;
@@ -306,7 +328,7 @@ router.post('/', authenticate, authorize('admin', 'president', 'perm:adherents_a
         telephone: opt(b.telephone), email: opt(b.email), whatsapp: opt(b.whatsapp), viber: opt(b.viber), adresse_personnelle: opt(b.adresse_personnelle), date_naissance: opt(b.date_naissance),nin: opt(b.nin), doc_type: opt(b.doc_type, 'RC'), doc_numero: opt(b.doc_numero), doc_numero_2: opt(b.doc_numero_2), photo,
         wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion,
         description, paiement_mode: paiement.paiement_mode, paiement_banque: paiement.paiement_banque, paiement_ref: paiement.paiement_ref,
-        bureau_code, bureau_badge_type, etoiles, carte_remise
+        bureau_code, bureau_badge_type, qualite_ar, etoiles, carte_remise
       };
     }
 
@@ -340,11 +362,16 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
     const niveau = normalizeNiveau(type_code, b.niveau, bureau_badge_type);
     const etoiles = type_code === 'BE' ? 0 : normalizeEtoiles(b.etoiles);
     const carte_remise = normalizeCarteRemise(b.carte_remise);
+    const qualite_ar = isEtranger(wilaya_code) ? opt(b.qualite_ar) : null;
 
     let matricule = a.matricule;
     let num_ordre = a.num_ordre;
 
-    if (!matricule || wilaya_code !== a.wilaya_code || type_code !== a.type_code || annee !== a.annee || bureau_code !== (a.bureau_code || null)) {
+    if (isEtranger(wilaya_code)) {
+      // Le matricule étranger reste entièrement sous le contrôle de l'utilisateur.
+      matricule = normalizeMatriculeManuel(b.matricule);
+      num_ordre = 0;
+    } else if (!matricule || isEtranger(a.wilaya_code) || wilaya_code !== a.wilaya_code || type_code !== a.type_code || annee !== a.annee || bureau_code !== (a.bureau_code || null)) {
       const gen = await generateMatricule({ wilaya_code, type_code, annee, bureau_code });
       matricule = gen.matricule;
       num_ordre = gen.num_ordre;
@@ -356,9 +383,9 @@ router.put('/:id', authenticate, authorize('admin', 'president', 'perm:adherents
 
     await run(
       `UPDATE adherents SET matricule=?, nom=?, prenom=?, nom_soc=?, nom_ar=?, prenom_ar=?, telephone=?, email=?, whatsapp=?, viber=?, adresse_personnelle=?, date_naissance=?, nin=?, doc_type=?, doc_numero=?, doc_numero_2=?, photo=?,
-       wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, etoiles=?, carte_remise=? WHERE id=?`,
+       wilaya_code=?, type_code=?, niveau=?, num_ordre=?, annee=?, date_adhesion=?, description=?, paiement_mode=?, paiement_banque=?, paiement_ref=?, bureau_code=?, bureau_badge_type=?, qualite_ar=?, etoiles=?, carte_remise=? WHERE id=?`,
       [matricule, text(b.nom), text(b.prenom), opt(b.nom_soc), text(b.nom_ar), text(b.prenom_ar), opt(b.telephone), opt(b.email), opt(b.whatsapp), opt(b.viber), opt(b.adresse_personnelle),opt(b.date_naissance), opt(b.nin), opt(b.doc_type, 'RC'), opt(b.doc_numero), opt(b.doc_numero_2),
-        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, etoiles, carte_remise, a.id]
+        photo, wilaya_code, type_code, niveau, num_ordre, annee, date_adhesion, description, paiement.paiement_mode, paiement.paiement_banque, paiement.paiement_ref, bureau_code, bureau_badge_type, qualite_ar, etoiles, carte_remise, a.id]
     );
     const upd = await get('SELECT * FROM adherents WHERE id = ?', [a.id]);
     if (upd) upd.matricule = matricule;
@@ -398,7 +425,7 @@ router.get('/:id/carte', authenticate, authorize('admin', 'president', 'perm:adh
     let a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
     
-    if (!a.matricule || a.matricule === "") {
+    if ((!a.matricule || a.matricule === "") && !isEtranger(a.wilaya_code)) {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
       const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee, bureau_code: a.bureau_code });
       a.matricule = gen.matricule;
@@ -432,7 +459,7 @@ router.get('/:id/dossier', authenticate, authorize('admin', 'president', 'perm:a
     let a = await get('SELECT * FROM adherents WHERE id = ?', [req.params.id]);
     if (!a) return res.status(404).json({ error: 'Adhérent introuvable.' });
     
-    if (!a.matricule || a.matricule === "") {
+    if ((!a.matricule || a.matricule === "") && !isEtranger(a.wilaya_code)) {
       const annee = a.date_adhesion ? new Date(a.date_adhesion).getFullYear() : new Date().getFullYear();
       const gen = await generateMatricule({ wilaya_code: a.wilaya_code || '16', type_code: a.type_code || 'AD', annee, bureau_code: a.bureau_code });
       a.matricule = gen.matricule;
@@ -488,9 +515,9 @@ function renderCarteHTML(a, ad, info, photoDataUri) {
 
   const nomAr    = a.nom_ar    || a.nom    || '';
   const prenomAr = a.prenom_ar || a.prenom || '';
-  const typeAr   = String(a.type_code || '').toUpperCase() === 'BE'
+  const typeAr = a.qualite_ar || (String(a.type_code || '').toUpperCase() === 'BE'
     ? (a.bureau_badge_type || info.qualiteAr || 'Bureau exécutif')
-    : (info.qualiteAr || getTypeAr(a.type_code));
+    : (info.qualiteAr || getTypeAr(a.type_code)));
 
   const matricule = a.matricule || ad.matricule || '';
   const dateAdh = formatDateAdhesion(a.date_adhesion);
@@ -644,6 +671,7 @@ function renderDossierHTML(a, ad, info) {
   const adresse = esc(a.adresse_personnelle || '');
   const dateNaissance = a.date_naissance ? formatDateAdhesion(a.date_naissance) : '';
   const niveauFr = esc(a.niveau || ad?.type_libelle || '');
+  const qualiteAr = esc(a.qualite_ar || info?.qualiteAr || '');
 
   // Format DD/MM/YYYY pour les pages arabes et la date du jour
   function formatDateDMY(d) {
@@ -822,7 +850,7 @@ function renderDossierHTML(a, ad, info) {
       <input type="text" style="left:59%; top:24.5%; width:17%; height:2.2%" value="${todayDMY}" title="Fait le" />
       <input type="text" style="left:30%; top:32%; width:55%; height:2.2%" value="${nomPrenomFr}" title="Je soussigné Mr" />
       <input type="text" style="left:24%; top:37.3%; width:23%; height:2.2%" value="${nin}" title="N° pièce d'identité" />
-      <input type="text" style="left:64.5%; top:37.3%; width:27%; height:2.2%" value="" title="En ma qualité de" />
+      <input type="text" style="left:64.5%; top:37.3%; width:27%; height:2.2%" value="${qualiteAr}" title="En ma qualité de / الصفة" />
       <input type="text" style="left:19.6%; top:43.3%; width:35%; height:2.2%" value="${nomSociete}" title="De la société" />
       <input type="text" style="left:78%; top:55.5%; width:14%; height:2.2%" value="${todayDMY}" title="A Ouled Fayet le" />
     </div>
