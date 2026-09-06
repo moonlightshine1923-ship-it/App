@@ -409,6 +409,10 @@ const Views = (() => {
                 <div class="qa-ico" style="background:rgba(124,58,237,.1);color:#7c3aed">👥</div>
                 <div><div>Comptes</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Gestion des utilisateurs</div></div>
               </button>
+              <button class="qa-btn" id="qaFinances">
+                <div class="qa-ico" style="background:rgba(196,155,46,.12);color:#c49b2e">💰</div>
+                <div><div>Finances</div><div style="font-size:11px;color:var(--muted, #94a3b8);font-weight:400">Chèques, banques, caisse</div></div>
+              </button>
             </div>
           </div>
         </div>
@@ -498,6 +502,7 @@ const Views = (() => {
     $('#qaDocuments').onclick = () => documentsList();
     $('#qaBureau').onclick = () => bureauExecutifList();
     $('#qaComptes').onclick = () => comptesList();
+    if ($('#qaFinances')) $('#qaFinances').onclick = () => finances();
     c.querySelectorAll('[data-star-view]').forEach((el) => el.onclick = () => adherentDetail(el.dataset.starView, adherentsList));
     bindAdhesionNotifications(s.adhesionsBientotExpirantes || [], dashboard);
   }
@@ -2362,7 +2367,12 @@ async function documentsList() {
           MERGE_PDF: '<span class="tag tag-type">Fusion PDF</span>',
           DELETE_PDF_GROUP: '<span class="tag tag-inactif">Suppression PDF</span>',
           BACKUP_CREATE: '<span class="tag tag-gold">Sauvegarde BDD</span>',
-          BACKUP_DOWNLOAD: '<span class="tag tag-type">Téléchargement</span>'
+          BACKUP_DOWNLOAD: '<span class="tag tag-type">Téléchargement</span>',
+          FINANCE_ENTREE: '<span class="tag tag-actif">Entrée finance</span>',
+          FINANCE_SORTIE: '<span class="tag tag-inactif">Sortie finance</span>',
+          EDIT_FINANCE_COMPTE: '<span class="tag tag-attente">Compte finance</span>',
+          EDIT_FINANCE_MOUVEMENT: '<span class="tag tag-attente">Mouvement finance</span>',
+          DELETE_FINANCE_MOUVEMENT: '<span class="tag tag-inactif">Suppression mouvement</span>'
         };
 
         body.innerHTML = logs.map(l => {
@@ -2432,5 +2442,542 @@ async function documentsList() {
     }
   }
 
-  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList, blacklistList, auditList, showAuditDetail };
+  /* ============ FINANCES ============ */
+
+  function fmtDA(v) {
+    const n = Number(v) || 0;
+    return n.toLocaleString('fr-DZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' DA';
+  }
+
+  function compteTag(code) {
+    const map = { BDL: '#1d4ed8', CPA: '#7c3aed', CAISSE: '#b45309' };
+    const color = map[code] || 'var(--gold-2)';
+    return `<span class="tag" style="background:${color}18;color:${color};border:1px solid ${color}44">${esc(code)}</span>`;
+  }
+
+  function natureTag(sens, nature) {
+    if (sens === 'sortie') {
+      const labels = {
+        paiement_employe: 'Paiement employé', loyer: 'Loyer', charges: 'Charges',
+        fournitures: 'Fournitures', deplacement: 'Déplacement', autre: 'Autre',
+      };
+      return `<span class="tag tag-inactif">${esc(labels[nature] || nature)}</span>`;
+    }
+    const labels = { cheque: 'Chèque', espece: 'Espèce', virement: 'Virement', autre: 'Autre entrée' };
+    const cls = nature === 'cheque' ? 'tag-type' : nature === 'virement' ? 'tag-actif' : 'tag-attente';
+    return `<span class="tag ${cls}">${esc(labels[nature] || nature)}</span>`;
+  }
+
+  async function finances() {
+    const c = container();
+    if (!(ROLE === 'admin' || ROLE === 'president')) {
+      c.innerHTML = UI.emptyState('🔒', 'Accès réservé à l’administrateur et au président.');
+      return;
+    }
+    c.innerHTML = '<div class="muted">Chargement des finances…</div>';
+
+    let tab = 'dashboard';
+    let meta = { comptes: [], naturesEntree: [], motifsSortie: [] };
+
+    try {
+      meta = await API.financesMeta();
+    } catch (err) {
+      c.innerHTML = `<div class="empty"><div class="empty-ico">⚠️</div><p>${esc(err.message)}</p></div>`;
+      return;
+    }
+
+    function compteOptions(sel, { includeCaisse = true } = {}) {
+      return (meta.comptes || [])
+        .filter((x) => includeCaisse || x.code !== 'CAISSE')
+        .map((x) => `<option value="${esc(x.code)}" ${x.code === sel ? 'selected' : ''}>${esc(x.label)}</option>`)
+        .join('');
+    }
+
+    c.innerHTML = `
+      <style>
+        .fin-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+        .fin-tab {
+          border:1px solid var(--border-strong); background:var(--panel); color:var(--text-dim);
+          padding:9px 16px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
+        }
+        .fin-tab.active { background:var(--gold-grad); color:#fff; border-color:transparent; }
+        .fin-kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
+        .fin-account-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-bottom:22px; }
+        .fin-account {
+          background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px;
+          box-shadow:var(--shadow); position:relative; overflow:hidden;
+        }
+        .fin-account::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background:var(--gold-grad); }
+        .fin-account h4 { font-size:14px; margin-bottom:4px; }
+        .fin-solde { font-size:24px; font-weight:800; color:var(--text); margin:8px 0 4px; }
+        .fin-obs { font-size:12.5px; color:var(--text-mute); min-height:18px; white-space:pre-wrap; }
+        .amt-in { color:#257a48; font-weight:700; }
+        .amt-out { color:#a83232; font-weight:700; }
+      </style>
+      <div class="fin-tabs">
+        <button class="fin-tab active" data-tab="dashboard">📊 Tableau de bord</button>
+        <button class="fin-tab" data-tab="encaisser">📥 Encaissements</button>
+        <button class="fin-tab" data-tab="sorties">📤 Sorties</button>
+        <button class="fin-tab" data-tab="mouvements">📒 Mouvements</button>
+        <button class="fin-tab" data-tab="comptes">🏦 Comptes</button>
+      </div>
+      <div id="finBody"><div class="muted">Chargement…</div></div>
+    `;
+
+    c.querySelectorAll('.fin-tab').forEach((btn) => {
+      btn.onclick = () => {
+        tab = btn.dataset.tab;
+        c.querySelectorAll('.fin-tab').forEach((b) => b.classList.toggle('active', b === btn));
+        renderTab();
+      };
+    });
+
+    async function renderTab() {
+      const body = $('#finBody');
+      body.innerHTML = '<div class="muted">Chargement…</div>';
+      try {
+        if (tab === 'dashboard') await renderDashboard(body);
+        else if (tab === 'encaisser') await renderEncaissements(body);
+        else if (tab === 'sorties') await renderSorties(body);
+        else if (tab === 'mouvements') await renderMouvements(body);
+        else await renderComptes(body);
+      } catch (err) {
+        body.innerHTML = `<div class="empty"><div class="empty-ico">⚠️</div><p>${esc(err.message)}</p></div>`;
+      }
+    }
+
+    async function renderDashboard(body) {
+      const d = await API.financesDashboard();
+      const t = d.totaux || {};
+      body.innerHTML = `
+        <div class="fin-kpi">
+          ${kpiCard('bdl', '🏦', fmtDA(t.bdl), 'Solde BDL', `Virements : ${fmtDA(t.virementsBdl)}`, '#1d4ed8')}
+          ${kpiCard('cpa', '🏦', fmtDA(t.cpa), 'Solde CPA', `Virements : ${fmtDA(t.virementsCpa)}`, '#7c3aed')}
+          ${kpiCard('caisse', '💵', fmtDA(t.caisse), 'Solde Caisse', 'Espèces & encaissements', '#b45309')}
+          ${kpiCard('banques', '🏛️', fmtDA(t.banques), 'Total banques (BDL + CPA)', `Virements : ${fmtDA(t.virementsBanques)}`, '#c49b2e')}
+          ${kpiCard('all', '💎', fmtDA(t.general), 'Total général', 'Les trois comptes ensemble', '#1a1a1a')}
+        </div>
+        <div class="fin-account-grid">
+          ${(d.comptes || []).map((acc) => `
+            <div class="fin-account">
+              <h4>${esc(acc.label)}</h4>
+              <div class="fin-solde">${fmtDA(acc.solde)}</div>
+              <div class="muted" style="font-size:12px;margin-bottom:10px">
+                Initial ${fmtDA(acc.montant_initial)} · Entrées <span class="amt-in">+${fmtDA(acc.entrees)}</span> · Sorties <span class="amt-out">−${fmtDA(acc.sorties)}</span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                ${natureTag('entree', 'cheque')} <span class="muted">${fmtDA(acc.cheques)}</span>
+                ${natureTag('entree', 'virement')} <span class="muted">${fmtDA(acc.virements)}</span>
+                ${natureTag('entree', 'espece')} <span class="muted">${fmtDA(acc.especes)}</span>
+              </div>
+              <div class="fin-obs">${acc.observation ? esc(acc.observation) : 'Aucune observation.'}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Derniers mouvements</h3></div>
+          ${renderMouvTable(d.recent || [], { compact: true })}
+        </div>
+      `;
+      bindMouvActions(body, renderTab);
+    }
+
+    async function renderComptes(body) {
+      const comptes = await API.financesComptes();
+      body.innerHTML = `
+        <p class="muted" style="margin-bottom:16px">Renseignez le <b>montant initial</b> et une <b>observation</b> pour BDL, CPA et la Caisse. Le solde = initial + entrées − sorties.</p>
+        <div class="fin-account-grid">
+          ${comptes.map((acc) => `
+            <form class="fin-account" data-compte="${esc(acc.code)}">
+              <h4>${esc(acc.label)}</h4>
+              <div class="fin-solde">${fmtDA(acc.solde)}</div>
+              <div class="field" style="margin-top:12px">
+                <label>Montant initial (DA)</label>
+                <input type="number" name="montant_initial" min="0" step="0.01" value="${esc(acc.montant_initial)}" />
+              </div>
+              <div class="field">
+                <label>Observation</label>
+                <textarea name="observation" rows="3" placeholder="Notes, n° de compte, agence…">${esc(acc.observation || '')}</textarea>
+              </div>
+              <button type="submit" class="btn btn-gold btn-sm btn-block">Enregistrer ${esc(acc.code)}</button>
+            </form>
+          `).join('')}
+        </div>
+      `;
+      body.querySelectorAll('form[data-compte]').forEach((form) => {
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          try {
+            await API.updateFinanceCompte(form.dataset.compte, {
+              montant_initial: form.montant_initial.value,
+              observation: form.observation.value,
+            });
+            toast('Compte ' + form.dataset.compte + ' mis à jour.');
+            renderTab();
+          } catch (err) { toast(err.message, 'error'); }
+        };
+      });
+    }
+
+    async function renderEncaissements(body) {
+      body.innerHTML = `
+        <div class="panel" style="margin-bottom:18px">
+          <div class="panel-head"><h3>Encaisser un paiement</h3></div>
+          <p class="muted" style="margin-bottom:12px">Choisissez le compte d’encaissement (<b>BDL</b>, <b>CPA</b> ou <b>Caisse</b>), l’adhérent qui a payé, le n° de chèque et la somme.</p>
+          <form id="encForm">
+            <div class="form-grid">
+              <div class="field">
+                <label>Compte d’encaissement *</label>
+                <select name="compte_code" id="encCompte" required>
+                  <option value="BDL">BDL</option>
+                  <option value="CPA">CPA</option>
+                  <option value="CAISSE">Caisse</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Mode *</label>
+                <select name="nature" id="encNature">
+                  ${(meta.naturesEntree || []).map((n) => `<option value="${esc(n.code)}">${esc(n.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>Adhérent (ayant payé)</label>
+                <select name="adherent_id" id="encAdherent"><option value="">— Sans adhérent —</option></select>
+              </div>
+              <div class="field">
+                <label>Montant (DA) *</label>
+                <input type="number" name="montant" min="0.01" step="0.01" required placeholder="0.00" />
+              </div>
+              <div class="field" id="encChequeWrap">
+                <label>N° de chèque</label>
+                <input name="cheque_numero" id="encCheque" maxlength="7" placeholder="7 chiffres" />
+              </div>
+              <div class="field">
+                <label>Date</label>
+                <input type="date" name="date_mouvement" value="${esc(new Date().toISOString().slice(0, 10))}" />
+              </div>
+              <div class="field full">
+                <label>Observation</label>
+                <input name="observation" placeholder="Agence, bordereau, remarque…" />
+              </div>
+            </div>
+            <div class="form-error" id="encErr"></div>
+            <div class="modal-foot" style="margin-top:8px">
+              <button type="submit" class="btn btn-gold">Enregistrer l’encaissement</button>
+            </div>
+          </form>
+        </div>
+        <div class="toolbar">
+          <input type="search" id="encSearch" placeholder="Rechercher un adhérent payé…" />
+          <select id="encMode">
+            <option value="">Tous les modes</option>
+            <option value="cheque">Chèques</option>
+            <option value="espece">Espèces</option>
+            <option value="virement">Virements</option>
+          </select>
+          <button class="btn btn-dark" id="encRefresh">⟳ Rafraîchir</button>
+        </div>
+        <div id="encTable"><div class="muted">Chargement…</div></div>
+      `;
+
+      async function loadPayes() {
+        const params = {};
+        const q = $('#encSearch').value.trim(); if (q) params.q = q;
+        const mode = $('#encMode').value; if (mode) params.mode = mode;
+        const list = await API.financesAdherentsPayes(params);
+        const sel = $('#encAdherent');
+        const current = sel.value;
+        sel.innerHTML = `<option value="">— Sans adhérent —</option>` + list.map((a) =>
+          `<option value="${a.id}" data-mode="${esc(a.paiement_mode || '')}" data-ref="${esc(a.paiement_ref || '')}" data-banque="${esc(a.paiement_banque || '')}">${esc(a.prenom)} ${esc(a.nom)} — ${esc(a.matricule || 'sans matricule')}</option>`
+        ).join('');
+        if (current) sel.value = current;
+
+        const t = $('#encTable');
+        if (!list.length) { t.innerHTML = UI.emptyState('👥', 'Aucun adhérent avec un paiement renseigné.'); return; }
+        t.innerHTML = `<div class="table-wrap"><table class="data">
+          <thead><tr>
+            <th>Adhérent</th><th>Matricule</th><th>Mode</th><th>N° chèque / réf.</th><th>Banque adhérent</th><th>Encaissé</th><th></th>
+          </tr></thead><tbody>
+          ${list.map((a) => `
+            <tr>
+              <td class="cell-strong">${esc(a.prenom)} ${esc(a.nom)}</td>
+              <td><span class="mono">${esc(a.matricule || '—')}</span></td>
+              <td>${natureTag('entree', a.paiement_mode)}</td>
+              <td class="mono">${esc(a.paiement_ref || '—')}</td>
+              <td>${esc(a.paiement_banque || '—')}</td>
+              <td>${a.n_encaissements
+                ? `<span class="tag tag-actif">✓ ${a.n_encaissements} · ${fmtDA(a.total_encaisse)}</span>`
+                : '<span class="tag tag-inactif">Non encaissé</span>'}</td>
+              <td><button class="btn btn-gold btn-sm" data-pick="${a.id}">Encaisser</button></td>
+            </tr>
+          `).join('')}
+          </tbody></table></div>`;
+        t.querySelectorAll('[data-pick]').forEach((btn) => {
+          btn.onclick = () => {
+            $('#encAdherent').value = btn.dataset.pick;
+            fillFromAdherent();
+            $('#encForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          };
+        });
+      }
+
+      function fillFromAdherent() {
+        const opt = $('#encAdherent').selectedOptions[0];
+        if (!opt || !opt.value) return;
+        const mode = opt.dataset.mode || '';
+        if (['cheque', 'espece', 'virement'].includes(mode)) $('#encNature').value = mode;
+        if (mode === 'cheque') $('#encCheque').value = opt.dataset.ref || '';
+        else $('#encCheque').value = '';
+        toggleCheque();
+      }
+
+      function toggleCheque() {
+        const show = $('#encNature').value === 'cheque';
+        $('#encChequeWrap').style.display = show ? '' : 'none';
+      }
+
+      $('#encNature').onchange = toggleCheque;
+      $('#encAdherent').onchange = fillFromAdherent;
+      toggleCheque();
+
+      $('#encForm').onsubmit = async (e) => {
+        e.preventDefault();
+        $('#encErr').textContent = '';
+        const f = e.target;
+        const compteEl = $('#encCompte') || f.querySelector('[name="compte_code"]');
+        const compteCode = String(compteEl?.value || '').toUpperCase().trim();
+        if (!['BDL', 'CPA', 'CAISSE'].includes(compteCode)) {
+          $('#encErr').textContent = 'Choisissez le compte d’encaissement (BDL, CPA ou Caisse).';
+          return;
+        }
+        try {
+          await API.createFinanceMouvement({
+            compte_code: compteCode,
+            sens: 'entree',
+            nature: f.nature.value,
+            montant: f.montant.value,
+            date_mouvement: f.date_mouvement.value,
+            adherent_id: f.adherent_id.value || null,
+            cheque_numero: f.nature.value === 'cheque' ? f.cheque_numero.value : '',
+            observation: f.observation.value,
+          });
+          toast('Encaissement enregistré.');
+          f.reset();
+          f.date_mouvement.value = new Date().toISOString().slice(0, 10);
+          toggleCheque();
+          loadPayes();
+        } catch (err) { $('#encErr').textContent = err.message; }
+      };
+
+      let timer;
+      $('#encSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(loadPayes, 280); };
+      $('#encMode').onchange = loadPayes;
+      $('#encRefresh').onclick = () => { loadPayes(); toast('Liste actualisée.'); };
+      await loadPayes();
+    }
+
+    async function renderSorties(body) {
+      const list = await API.financesMouvements({ sens: 'sortie' });
+      body.innerHTML = `
+        <div class="panel" style="margin-bottom:18px">
+          <div class="panel-head"><h3>Nouvelle sortie</h3></div>
+          <form id="outForm">
+            <div class="form-grid">
+              <div class="field">
+                <label>Compte débité *</label>
+                <select name="compte_code" required>${compteOptions('CAISSE')}</select>
+              </div>
+              <div class="field">
+                <label>Cause *</label>
+                <select name="nature">
+                  ${(meta.motifsSortie || []).map((m) => `<option value="${esc(m.code)}">${esc(m.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                <label>Montant (DA) *</label>
+                <input type="number" name="montant" min="0.01" step="0.01" required />
+              </div>
+              <div class="field">
+                <label>Date</label>
+                <input type="date" name="date_mouvement" value="${esc(new Date().toISOString().slice(0, 10))}" />
+              </div>
+              <div class="field full">
+                <label>Détail / bénéficiaire</label>
+                <input name="motif" placeholder="Ex. salaire mars, loyer local Alger…" />
+              </div>
+              <div class="field full">
+                <label>Observation</label>
+                <input name="observation" />
+              </div>
+            </div>
+            <div class="form-error" id="outErr"></div>
+            <div class="modal-foot" style="margin-top:8px">
+              <button type="submit" class="btn btn-gold">Enregistrer la sortie</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Historique des sorties</h3></div>
+          ${renderMouvTable(list)}
+        </div>
+      `;
+      $('#outForm').onsubmit = async (e) => {
+        e.preventDefault();
+        $('#outErr').textContent = '';
+        const f = e.target;
+        try {
+          await API.createFinanceMouvement({
+            compte_code: f.compte_code.value,
+            sens: 'sortie',
+            nature: f.nature.value,
+            montant: f.montant.value,
+            date_mouvement: f.date_mouvement.value,
+            motif: f.motif.value,
+            observation: f.observation.value,
+          });
+          toast('Sortie enregistrée.');
+          renderTab();
+        } catch (err) { $('#outErr').textContent = err.message; }
+      };
+      bindMouvActions(body, renderTab);
+    }
+
+    async function renderMouvements(body) {
+      body.innerHTML = `
+        <div class="toolbar">
+          <input type="search" id="mvSearch" placeholder="Rechercher (adhérent, chèque, motif)…" />
+          <select id="mvSens">
+            <option value="">Entrées & sorties</option>
+            <option value="entree">Entrées</option>
+            <option value="sortie">Sorties</option>
+          </select>
+          <select id="mvCompte">
+            <option value="">Tous les comptes</option>
+            ${(meta.comptes || []).map((x) => `<option value="${esc(x.code)}">${esc(x.code)}</option>`).join('')}
+          </select>
+          <select id="mvNature">
+            <option value="">Toutes natures</option>
+            ${(meta.naturesEntree || []).map((n) => `<option value="${esc(n.code)}">${esc(n.label)}</option>`).join('')}
+            ${(meta.motifsSortie || []).map((n) => `<option value="${esc(n.code)}">${esc(n.label)}</option>`).join('')}
+          </select>
+          <button class="btn btn-dark" id="mvRefresh">⟳</button>
+        </div>
+        <div id="mvTable"><div class="muted">Chargement…</div></div>
+      `;
+      async function load() {
+        const params = {};
+        const q = $('#mvSearch').value.trim(); if (q) params.q = q;
+        const s = $('#mvSens').value; if (s) params.sens = s;
+        const cpt = $('#mvCompte').value; if (cpt) params.compte = cpt;
+        const n = $('#mvNature').value; if (n) params.nature = n;
+        const list = await API.financesMouvements(params);
+        $('#mvTable').innerHTML = renderMouvTable(list);
+        bindMouvActions($('#mvTable'), load);
+      }
+      let timer;
+      $('#mvSearch').oninput = () => { clearTimeout(timer); timer = setTimeout(load, 280); };
+      $('#mvSens').onchange = load;
+      $('#mvCompte').onchange = load;
+      $('#mvNature').onchange = load;
+      $('#mvRefresh').onclick = load;
+      await load();
+    }
+
+    function renderMouvTable(list, { compact = false } = {}) {
+      if (!list.length) return UI.emptyState('📒', 'Aucun mouvement.');
+      return `<div class="table-wrap"><table class="data">
+        <thead><tr>
+          <th>Date</th><th>Compte</th><th>Type</th><th>Nature / cause</th>
+          <th>Adhérent / détail</th><th>Chèque</th><th>Montant</th>${compact ? '' : '<th></th>'}
+        </tr></thead><tbody>
+        ${list.map((m) => {
+          const who = m.adherent_id
+            ? `${esc(m.adherent_prenom || '')} ${esc(m.adherent_nom || '')}`.trim() + (m.adherent_matricule ? ` · ${esc(m.adherent_matricule)}` : '')
+            : esc(m.motif || m.observation || '—');
+          const amtCls = m.sens === 'entree' ? 'amt-in' : 'amt-out';
+          const sign = m.sens === 'entree' ? '+' : '−';
+          return `<tr>
+            <td class="muted">${esc(fmtDate(m.date_mouvement))}</td>
+            <td>${compteTag(m.compte_code)}</td>
+            <td>${m.sens === 'entree' ? '<span class="tag tag-actif">Entrée</span>' : '<span class="tag tag-inactif">Sortie</span>'}</td>
+            <td>${natureTag(m.sens, m.nature)}</td>
+            <td>${who}</td>
+            <td class="mono">${esc(m.cheque_numero || '—')}</td>
+            <td class="${amtCls}">${sign}${fmtDA(m.montant)}</td>
+            ${compact ? '' : `<td><div class="row-actions">
+              <button class="btn btn-dark btn-sm" data-edit-mouv="${m.id}">✎</button>
+              <button class="btn btn-danger btn-sm" data-del-mouv="${m.id}">✕</button>
+            </div></td>`}
+          </tr>`;
+        }).join('')}
+        </tbody></table></div>`;
+    }
+
+    function bindMouvActions(root, reload) {
+      root.querySelectorAll('[data-del-mouv]').forEach((btn) => {
+        btn.onclick = () => confirm('Supprimer ce mouvement ?', async () => {
+          try {
+            await API.deleteFinanceMouvement(btn.dataset.delMouv);
+            toast('Mouvement supprimé.');
+            reload && reload();
+          } catch (err) { toast(err.message, 'error'); }
+        });
+      });
+      root.querySelectorAll('[data-edit-mouv]').forEach((btn) => {
+        btn.onclick = async () => {
+          const all = await API.financesMouvements();
+          const m = all.find((x) => String(x.id) === String(btn.dataset.editMouv));
+          if (!m) return;
+          openMouvEdit(m, reload);
+        };
+      });
+    }
+
+    function openMouvEdit(m, reload) {
+      const natures = m.sens === 'sortie' ? (meta.motifsSortie || []) : (meta.naturesEntree || []);
+      openModal('Modifier le mouvement', `
+        <form id="mvEditForm">
+          <div class="form-grid">
+            <div class="field"><label>Compte</label><select name="compte_code">${compteOptions(m.compte_code)}</select></div>
+            <div class="field"><label>Nature / cause</label>
+              <select name="nature">${natures.map((n) => `<option value="${esc(n.code)}" ${n.code === m.nature ? 'selected' : ''}>${esc(n.label)}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Montant (DA)</label><input type="number" name="montant" min="0.01" step="0.01" value="${esc(m.montant)}" required /></div>
+            <div class="field"><label>Date</label><input type="date" name="date_mouvement" value="${esc(fmtDate(m.date_mouvement))}" /></div>
+            <div class="field"><label>N° chèque</label><input name="cheque_numero" value="${esc(m.cheque_numero || '')}" maxlength="7" /></div>
+            <div class="field"><label>Détail</label><input name="motif" value="${esc(m.motif || '')}" /></div>
+            <div class="field full"><label>Observation</label><textarea name="observation" rows="2">${esc(m.observation || '')}</textarea></div>
+          </div>
+          <div class="form-error" id="mvEditErr"></div>
+          <div class="modal-foot">
+            <button type="button" class="btn btn-ghost" id="mvEditCancel">Annuler</button>
+            <button type="submit" class="btn btn-gold">Enregistrer</button>
+          </div>
+        </form>
+      `, true);
+      $('#mvEditCancel').onclick = closeModal;
+      $('#mvEditForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          await API.updateFinanceMouvement(m.id, {
+            compte_code: f.compte_code.value,
+            nature: f.nature.value,
+            montant: f.montant.value,
+            date_mouvement: f.date_mouvement.value,
+            cheque_numero: f.cheque_numero.value,
+            motif: f.motif.value,
+            observation: f.observation.value,
+          });
+          toast('Mouvement mis à jour.');
+          closeModal();
+          reload && reload();
+        } catch (err) { $('#mvEditErr').textContent = err.message; }
+      };
+    }
+
+    await renderTab();
+  }
+
+  return { setRef, setRole, setPermissions, dashboard, adherentsList, bureauExecutifList, demandesList, documentsList, parametres, saisieAjout, comptesList, blacklistList, auditList, showAuditDetail, finances };
 })();

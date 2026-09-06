@@ -12,6 +12,7 @@
     { id: 'blacklist', label: 'Blacklist', icon: '🚫', title: 'Liste noire — Blacklist', render: () => Views.blacklistList() },
     { id: 'demandes', label: 'Demandes', icon: '📨', title: 'Demandes (site web)', render: () => Views.demandesList() },
     { id: 'documents', label: 'Documents', icon: '📁', title: 'Gestion documentaire', render: () => Views.documentsList() },
+    { id: 'finances', label: 'Finances', icon: '💰', title: 'Gestion des finances', render: () => Views.finances() },
     { id: 'comptes', label: 'Comptes', icon: '🔑', title: 'Comptes utilisateurs', render: () => Views.comptesList() },
     { id: 'parametres', label: 'Paramètres', icon: '⚙️', title: 'Paramètres', render: () => Views.parametres() },
   ];

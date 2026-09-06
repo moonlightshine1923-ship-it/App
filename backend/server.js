@@ -35,6 +35,7 @@ import statsRoutes from './routes/stats.js';
 import usersRoutes from './routes/users.js';
 import blacklistRoutes from './routes/blacklist.js';
 import auditRoutes from './routes/audit.js';
+import financesRoutes from './routes/finances.js';
 import { logAction } from './audit.js';
 
 const app = express();
@@ -88,6 +89,7 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/blacklist', blacklistRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/finances', financesRoutes);
 
 app.post('/api/backup', authenticate, authorize('admin', 'president'), async (req, res) => {
   try {

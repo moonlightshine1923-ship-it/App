@@ -45,9 +45,9 @@ function enrich(a) {
   };
 }
 
-/* ──────────────────────────────────────────────
+/* ────────────────────────────────────────────────────────s
    FIX 1 : normalizePaiementMode — ajout de 'non_assujetti'
-   ────────────────────────────────────────────── */
+   ──────────────────────────────────────────────────────── */
 function normalizePaiementMode(mode) {
   const m = String(mode || '').trim().toLowerCase();
   if (['cheque', 'chèque'].includes(m)) return 'cheque';

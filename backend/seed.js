@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { connect, initSchema, get, run } from './db.js';
 import { generateMatricule } from './matricule.js';
 import { DOC_TYPES } from './data/wilayas.js';
+import { ensureFinanceSchema } from './routes/finances.js';
 
 const PRENOMS_H = ['Karim', 'Ahmed', 'Sofiane', 'Yacine', 'Mohamed', 'Riad', 'Bilal', 'Toufik', 'Nabil', 'Amine'];
 const PRENOMS_F = ['Amina', 'Sara', 'Nadia', 'Yasmine', 'Lina', 'Imene', 'Hayet', 'Souad', 'Meriem', 'Wassila'];
@@ -44,6 +45,7 @@ function genNIN() {
 
 export async function ensureSeed() {
   await initSchema();
+  await ensureFinanceSchema();
   const userCount = (await get('SELECT COUNT(*) AS c FROM users')).c;
   if (userCount > 0) return;
 

@@ -111,6 +111,23 @@ const API = (() => {
       return request('GET', '/audit' + (q ? '?' + q : ''));
     },
 
+    // --- FINANCES ---
+    financesDashboard: () => request('GET', '/finances/dashboard'),
+    financesMeta: () => request('GET', '/finances/meta'),
+    financesComptes: () => request('GET', '/finances/comptes'),
+    updateFinanceCompte: (code, data) => request('PATCH', '/finances/comptes/' + encodeURIComponent(code), data),
+    financesMouvements: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request('GET', '/finances/mouvements' + (q ? '?' + q : ''));
+    },
+    createFinanceMouvement: (data) => request('POST', '/finances/mouvements', data),
+    updateFinanceMouvement: (id, data) => request('PATCH', '/finances/mouvements/' + id, data),
+    deleteFinanceMouvement: (id) => request('DELETE', '/finances/mouvements/' + id),
+    financesAdherentsPayes: (params = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request('GET', '/finances/adherents-payes' + (q ? '?' + q : ''));
+    },
+
     // Renvoie un blob URL authentifié pour un fichier protégé
     fileUrl: async (relPath) => {
       const res = await fetch('/uploads/' + relPath, {

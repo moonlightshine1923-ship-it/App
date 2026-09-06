@@ -1,8 +1,8 @@
 import { get } from './db.js';
 
 /* ═══════════════════════════════════════════════════════════════════
-   NUMÉROTATION DES MATRICULES
-   ─────────────────────────
+   NUMÉROTATION DES MATRICULES :
+   ─────────────────────────────
    Format : AGN19 + Wilaya(2) + N°(3) + TYPE + Année(4)
 
    CR  → compteur NATIONAL (que les CR)
